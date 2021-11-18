@@ -1,0 +1,15 @@
+[package]
+name = "siwe-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+iri-string = "0.4"
+chrono = "0.4"
+hex = "0.4"
+k256 = { version = "0.9", default-features = false, features = ["std", "ecdsa", "keccak256"] }
+sha3 = "0.9"
+thiserror = "1.0"
+url = "2.2"
