@@ -1,10 +1,17 @@
 use chrono::{DateTime, Utc};
 use core::{
-    convert::Infallible,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
 use iri_string::types::{UriAbsoluteString, UriString};
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{line_ending, not_line_ending},
+    combinator::{all_consuming, eof, flat_map},
+    sequence::{preceded, terminated, tuple},
+    IResult, ParseTo,
+};
 use thiserror::Error;
 use url::Host as GHost;
 
@@ -18,12 +25,12 @@ pub enum Version {
 }
 
 impl FromStr for Version {
-    type Err = ParseError;
+    type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "1" {
             Ok(Self::V1)
         } else {
-            Err(ParseError::Format("Bad Version"))
+            Err(())
         }
     }
 }
@@ -72,117 +79,40 @@ impl Display for Message {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum ParseError {
-    #[error("Invalid Domain: {0}")]
-    Domain(#[from] url::ParseError),
-    #[error("Formatting Error: {0}")]
-    Format(&'static str),
-    #[error("Invalid Address: {0}")]
-    Address(#[from] hex::FromHexError),
-    #[error("Invalid Statement: {0}")]
-    Statement(&'static str),
-    #[error("Invalid URI: {0}")]
-    Uri(#[from] iri_string::validate::Error),
-    #[error("Invalid Timestamp: {0}")]
-    TimeStamp(#[from] chrono::format::ParseError),
-    #[error("Invalid Nonce: {0}")]
-    Nonce(&'static str),
-    #[error(transparent)]
-    ParseIntError(#[from] std::num::ParseIntError),
-    #[error(transparent)]
-    Never(#[from] Infallible),
+type NomErr<O> = (O, nom::error::ErrorKind);
+
+fn line<'a>(s: &'a str) -> IResult<&'a str, &'a str, NomErr<&'a str>> {
+    terminated(not_line_ending, alt((line_ending, eof)))(s)
 }
 
-fn tagged<'a>(tag: &'static str, line: Option<&'a str>) -> Result<&'a str, ParseError> {
-    line.and_then(|l| l.strip_prefix(tag))
-        .ok_or(ParseError::Format(tag))
+fn tagged_line<'a, S: FromStr>(
+    t: &str,
+) -> impl FnMut(&'a str) -> nom::IResult<&'a str, S, NomErr<&'a str>> {
+    flat_map(
+        line,
+        preceded(tag(t), |s: &str| {
+            Ok((
+                "",
+                ParseTo::parse_to(&s).ok_or(nom::Err::Error((s, nom::error::ErrorKind::Fail)))?,
+            ))
+        }),
+    )
 }
 
-fn parse_line<'a, S: FromStr<Err = E>, E: Into<ParseError>>(
-    tag: &'static str,
-    line: Option<&'a str>,
-) -> Result<S, ParseError> {
-    println!("{}, {:?}", tag, line);
-    tagged(tag, line).and_then(|s| S::from_str(s).map_err(|e| e.into()))
-}
+fn parse_message<'a>(s: &'a str) -> IResult<&'a str, Message, NomErr<&'a str>> {
+    // tuple((
+    //     // terminated("") domain,
 
-fn parse_optional<'a, S: FromStr<Err = E>, E: Into<ParseError>>(
-    tag: &'static str,
-    line: Option<&'a str>,
-) -> Result<Option<S>, ParseError> {
-    match parse_line(tag, line).map(|s| Some(s)) {
-        Err(ParseError::Format(t)) if t == tag => Ok(None),
-        r => r,
-    }
+    // ))
+    todo!()
 }
 
 impl FromStr for Message {
-    type Err = ParseError;
+    type Err = nom::Err<(String, nom::error::ErrorKind)>;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use hex::FromHex;
-        let mut lines = s.split("\n");
-        let domain = lines
-            .next()
-            .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
-            .map(Host::parse)
-            .ok_or(ParseError::Format("Missing Preamble Line"))??;
-        let address = tagged(ADDR_TAG, lines.next())
-            .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
-        let statement = match (lines.next(), lines.next(), lines.next()) {
-            (Some(""), Some(s), Some("")) => s.to_string(),
-            _ => return Err(ParseError::Statement("Missing Statement")),
-        };
-        let uri = parse_line(URI_TAG, lines.next())?;
-        let version = parse_line(VERSION_TAG, lines.next())?;
-        let chain_id = parse_line(CHAIN_TAG, lines.next())?;
-        let nonce = parse_line(NONCE_TAG, lines.next())?;
-        let issued_at = parse_line(IAT_TAG, lines.next())?;
-
-        let mut line = lines.next();
-        let expiration_time = match parse_optional(EXP_TAG, line)? {
-            Some(exp) => {
-                line = lines.next();
-                Some(exp)
-            }
-            None => None,
-        };
-        let not_before = match parse_optional(NBF_TAG, line)? {
-            Some(nbf) => {
-                line = lines.next();
-                Some(nbf)
-            }
-            None => None,
-        };
-
-        let request_id = match parse_optional(RID_TAG, line)? {
-            Some(rid) => {
-                line = lines.next();
-                Some(rid)
-            }
-            None => None,
-        };
-
-        let resources = match line {
-            Some(RES_TAG) => lines.map(|s| parse_line("- ", Some(s))).collect(),
-            Some(_) => Err(ParseError::Format("Unexpected Content")),
-            None => Ok(vec![]),
-        }?;
-
-        Ok(Message {
-            domain,
-            address,
-            statement,
-            uri,
-            version,
-            chain_id,
-            nonce,
-            issued_at,
-            expiration_time,
-            not_before,
-            request_id,
-            resources,
-        })
+        all_consuming(parse_message)(s)
+            .map(|(_, m)| m)
+            .map_err(|e| e.to_owned())
     }
 }
 
@@ -217,11 +147,8 @@ impl Message {
     }
 
     pub fn valid_now(&self) -> bool {
-        self.not_before.map(|nbf| Utc::now() >= nbf).unwrap_or(true)
-            && self
-                .expiration_time
-                .map(|exp| Utc::now() < exp)
-                .unwrap_or(true)
+        let t = Utc::now();
+        self.not_before.map_or(true, |n| t >= n) && self.expiration_time.map_or(true, |e| t < e)
     }
 
     pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {

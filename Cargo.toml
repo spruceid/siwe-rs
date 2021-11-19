@@ -13,3 +13,4 @@ k256 = { version = "0.9", default-features = false, features = ["std", "ecdsa", 
 sha3 = "0.9"
 thiserror = "1.0"
 url = "2.2"
+nom = "7.1"
