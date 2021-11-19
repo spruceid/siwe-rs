@@ -103,7 +103,6 @@ fn parse_line<'a, S: FromStr<Err = E>, E: Into<ParseError>>(
     tag: &'static str,
     line: Option<&'a str>,
 ) -> Result<S, ParseError> {
-    println!("{}, {:?}", tag, line);
     tagged(tag, line).and_then(|s| S::from_str(s).map_err(|e| e.into()))
 }
 
@@ -251,8 +250,9 @@ const RID_TAG: &'static str = "Request ID: ";
 const RES_TAG: &'static str = "Resources:";
 
 #[test]
-fn parse() {
-    Message::from_str(
+fn parsing() {
+    // correct order
+    assert!(Message::from_str(
         r#"service.org wants you to sign in with your Ethereum account:
 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
 
@@ -267,5 +267,44 @@ Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
 - https://example.com/my-web2-claim.json"#,
     )
+    .is_ok());
+    // incorrect order
+    assert!(Message::from_str(
+        r#"service.org wants you to sign in with your Ethereum account:
+0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+
+I accept the ServiceOrg Terms of Service: https://service.org/tos
+
+URI: https://service.org/login
+Version: 1
+Nonce: 32891756
+Chain ID: 1
+Issued At: 2021-09-30T16:25:24Z
+Resources:
+- ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
+- https://example.com/my-web2-claim.json"#,
+    )
+    .is_err())
+}
+
+#[test]
+fn validation() {
+    use hex::FromHex;
+    let message = Message::from_str(
+        r#"login.xyz wants you to sign in with your Ethereum account:
+0xe2f03cb7a54ddd886da9b0d227bfcb2d61429699
+
+Sign-In With Ethereum Example Statement
+
+URI: https://login.xyz
+Version: 1
+Chain ID: 1
+Nonce: k13wuejc
+Issued At: 2021-11-12T17:37:48.462Z"#,
+    )
     .unwrap();
+    let correct = <[u8; 65]>::from_hex(r#"795110331a07a4d475419fbdb346feb4c0579dcc8228989964474e07d98dbf425f38776cd6ca037f58288acc7b15e720c9cecac988479177fb70592f2391aaff1b"#).unwrap();
+    assert!(message.verify_eip191(correct).is_ok());
+    let incorrect = <[u8; 65]>::from_hex(r#"895110331a07a4d475419fbdb346feb4c0579dcc8228989964474e07d98dbf425f38776cd6ca037f58288acc7b15e720c9cecac988479177fb70592f2391aaff1b"#).unwrap();
+    assert!(message.verify_eip191(incorrect).is_err());
 }
