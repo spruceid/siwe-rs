@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use core::{
     convert::Infallible,
     fmt::{self, Display, Formatter},
@@ -43,29 +43,33 @@ pub struct Message {
     pub resources: Vec<UriString>,
 }
 
+fn rfc3339(t: &TimeStamp) -> String {
+    t.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "{}", hex::encode(&self.address))?;
+        writeln!(f, "0x{}", hex::encode(&self.address))?;
         writeln!(f, "\n{}\n", &self.statement)?;
         writeln!(f, "{}{}", URI_TAG, &self.uri)?;
         writeln!(f, "{}{}", VERSION_TAG, self.version as u64)?;
         writeln!(f, "{}{}", CHAIN_TAG, &self.chain_id)?;
         writeln!(f, "{}{}", NONCE_TAG, &self.nonce)?;
-        writeln!(f, "{}{}", IAT_TAG, &self.issued_at)?;
+        write!(f, "{}{}", IAT_TAG, &rfc3339(&self.issued_at))?;
         if let Some(exp) = &self.expiration_time {
-            writeln!(f, "{}{}", EXP_TAG, exp)?
+            write!(f, "\n{}{}", EXP_TAG, &rfc3339(exp))?
         };
         if let Some(nbf) = &self.not_before {
-            writeln!(f, "{}{}", NBF_TAG, nbf)?
+            write!(f, "\n{}{}", NBF_TAG, &rfc3339(nbf))?
         };
         if let Some(rid) = &self.request_id {
-            writeln!(f, "{}{}", RID_TAG, rid)?
+            write!(f, "\n{}{}", RID_TAG, rid)?
         };
         if !self.resources.is_empty() {
-            writeln!(f, "{}", RES_TAG)?;
+            write!(f, "\n{}", RES_TAG)?;
             for res in &self.resources {
-                writeln!(f, "- {}", res)?;
+                write!(f, "\n- {}", res)?;
             }
         };
         Ok(())
@@ -252,8 +256,7 @@ const RES_TAG: &'static str = "Resources:";
 #[test]
 fn parsing() {
     // correct order
-    assert!(Message::from_str(
-        r#"service.org wants you to sign in with your Ethereum account:
+    let message = r#"service.org wants you to sign in with your Ethereum account:
 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
 
 I accept the ServiceOrg Terms of Service: https://service.org/tos
@@ -265,9 +268,12 @@ Nonce: 32891756
 Issued At: 2021-09-30T16:25:24Z
 Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
-- https://example.com/my-web2-claim.json"#,
-    )
-    .is_ok());
+- https://example.com/my-web2-claim.json"#;
+
+    assert!(Message::from_str(message).is_ok());
+
+    assert_eq!(message, &Message::from_str(message).unwrap().to_string());
+
     // incorrect order
     assert!(Message::from_str(
         r#"service.org wants you to sign in with your Ethereum account:
