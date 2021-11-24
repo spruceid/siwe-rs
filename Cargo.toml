@@ -1,7 +1,11 @@
 [package]
-name = "siwe-rs"
+name = "siwe"
 version = "0.1.0"
+authors = ["Spruce Systems, Inc."]
 edition = "2021"
+license = "Apache-2.0"
+description = "Rust implementation of EIP-4361: Sign In With Ethereum"
+repository = "https://github.com/spruceid/siwe-rs/"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
