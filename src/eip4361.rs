@@ -1,74 +1,52 @@
-use chrono::{DateTime, SecondsFormat, Utc};
-use core::{
+use super::cacao::*;
+use iri_string::types::UriAbsoluteString;
+use std::{
     convert::Infallible,
-    fmt::{self, Display, Formatter},
+    fmt::{Error, Write},
     str::FromStr,
 };
-use iri_string::types::{UriAbsoluteString, UriString};
 use thiserror::Error;
-use url::Host as GHost;
 
-type Host = GHost<String>;
+pub struct EIP4361;
 
-type TimeStamp = DateTime<Utc>;
-
-#[derive(Copy, Clone)]
-pub enum Version {
-    V1 = 1,
-}
-
-impl FromStr for Version {
-    type Err = ParseError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "1" {
-            Ok(Self::V1)
-        } else {
-            Err(ParseError::Format("Bad Version"))
-        }
-    }
-}
-
-pub struct Message {
-    pub domain: Host,
-    pub address: [u8; 20],
-    pub statement: String,
-    pub uri: UriAbsoluteString,
-    pub version: Version,
-    pub chain_id: String,
-    pub nonce: String,
-    pub issued_at: String,
-    pub expiration_time: Option<String>,
-    pub not_before: Option<String>,
-    pub request_id: Option<String>,
-    pub resources: Vec<UriString>,
-}
-
-impl Display for Message {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "0x{}", hex::encode(&self.address))?;
-        writeln!(f, "\n{}\n", &self.statement)?;
-        writeln!(f, "{}{}", URI_TAG, &self.uri)?;
-        writeln!(f, "{}{}", VERSION_TAG, self.version as u64)?;
-        writeln!(f, "{}{}", CHAIN_TAG, &self.chain_id)?;
-        writeln!(f, "{}{}", NONCE_TAG, &self.nonce)?;
-        write!(f, "{}{}", IAT_TAG, &self.issued_at)?;
-        if let Some(exp) = &self.expiration_time {
-            write!(f, "\n{}{}", EXP_TAG, &exp)?
+impl Representation for EIP4361 {
+    const ID: &'static str = "eip4361";
+    type Err = Error;
+    type Output = String;
+    fn serialize(payload: &Payload) -> Result<Self::Output, Self::Err> {
+        let mut w = String::new();
+        writeln!(&mut w, "{}{}", &payload.aud, PREAMBLE)?;
+        writeln!(&mut w, "{}", &payload.address().ok_or(Error)?)?;
+        writeln!(&mut w, "\n{}\n", &payload.statement)?;
+        writeln!(&mut w, "{}{}", URI_TAG, &payload.uri)?;
+        writeln!(&mut w, "{}{}", VERSION_TAG, payload.version as u64)?;
+        writeln!(
+            &mut w,
+            "{}{}",
+            CHAIN_TAG,
+            &payload
+                .chain_id()
+                .and_then(|c| c.split(':').nth(1))
+                .ok_or(Error)?
+        )?;
+        writeln!(&mut w, "{}{}", NONCE_TAG, &payload.nonce)?;
+        write!(&mut w, "{}{}", IAT_TAG, &payload.iat)?;
+        if let Some(exp) = &payload.exp {
+            write!(&mut w, "\n{}{}", EXP_TAG, &exp)?
         };
-        if let Some(nbf) = &self.not_before {
-            write!(f, "\n{}{}", NBF_TAG, &nbf)?
+        if let Some(nbf) = &payload.nbf {
+            write!(&mut w, "\n{}{}", NBF_TAG, &nbf)?
         };
-        if let Some(rid) = &self.request_id {
-            write!(f, "\n{}{}", RID_TAG, rid)?
+        if let Some(rid) = &payload.requestId {
+            write!(&mut w, "\n{}{}", RID_TAG, rid)?
         };
-        if !self.resources.is_empty() {
-            write!(f, "\n{}", RES_TAG)?;
-            for res in &self.resources {
-                write!(f, "\n- {}", res)?;
+        if !payload.resources.is_empty() {
+            write!(&mut w, "\n{}", RES_TAG)?;
+            for res in &payload.resources {
+                write!(&mut w, "\n- {}", res)?;
             }
         };
-        Ok(())
+        Ok(w)
     }
 }
 
@@ -116,142 +94,84 @@ fn tag_optional<'a>(
     }
 }
 
-impl FromStr for Message {
-    type Err = ParseError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use hex::FromHex;
-        let mut lines = s.split("\n");
-        let domain = lines
-            .next()
-            .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
-            .map(Host::parse)
-            .ok_or(ParseError::Format("Missing Preamble Line"))??;
-        let address = tagged(ADDR_TAG, lines.next())
-            .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
-        let statement = match (lines.next(), lines.next(), lines.next()) {
-            (Some(""), Some(s), Some("")) => s.to_string(),
-            _ => return Err(ParseError::Statement("Missing Statement")),
-        };
-        let uri = parse_line(URI_TAG, lines.next())?;
-        let version = parse_line(VERSION_TAG, lines.next())?;
-        let chain_id = parse_line(CHAIN_TAG, lines.next())?;
-        let nonce = parse_line(NONCE_TAG, lines.next())?;
-        let issued_at = tagged(IAT_TAG, lines.next()).and_then(|iat| {
-            TimeStamp::from_str(iat)?;
-            Ok(iat.into())
-        })?;
+pub fn from_str(s: &str) -> Result<Payload, ParseError> {
+    use hex::FromHex;
+    let mut lines = s.split("\n");
+    let aud = lines
+        .next()
+        .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
+        .map(Host::parse)
+        .ok_or(ParseError::Format("Missing Preamble Line"))??;
+    let address = tagged(ADDR_TAG, lines.next())
+        .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
+    let statement = match (lines.next(), lines.next(), lines.next()) {
+        (Some(""), Some(s), Some("")) => s.to_string(),
+        _ => return Err(ParseError::Statement("Missing Statement")),
+    };
+    let uri = parse_line(URI_TAG, lines.next())?;
+    let version = if 1u32 == parse_line(VERSION_TAG, lines.next())? {
+        Version::V1
+    } else {
+        return Err(ParseError::Format("Bad Version"));
+    };
+    let chain_id = tagged(CHAIN_TAG, lines.next())?;
+    let nonce = parse_line(NONCE_TAG, lines.next())?;
+    let iat = tagged(IAT_TAG, lines.next()).and_then(|iat| {
+        TimeStamp::from_str(iat)?;
+        Ok(iat.into())
+    })?;
 
-        let mut line = lines.next();
-        let expiration_time = match tag_optional(EXP_TAG, line)? {
-            Some(exp) => {
-                TimeStamp::from_str(&exp)?;
-                line = lines.next();
-                Some(exp.into())
-            }
-            None => None,
-        };
-        let not_before = match tag_optional(NBF_TAG, line)? {
-            Some(nbf) => {
-                TimeStamp::from_str(nbf)?;
-                line = lines.next();
-                Some(nbf.into())
-            }
-            None => None,
-        };
-
-        let request_id = match tag_optional(RID_TAG, line)? {
-            Some(rid) => {
-                line = lines.next();
-                Some(rid.into())
-            }
-            None => None,
-        };
-
-        let resources = match line {
-            Some(RES_TAG) => lines.map(|s| parse_line("- ", Some(s))).collect(),
-            Some(_) => Err(ParseError::Format("Unexpected Content")),
-            None => Ok(vec![]),
-        }?;
-
-        Ok(Message {
-            domain,
-            address,
-            statement,
-            uri,
-            version,
-            chain_id,
-            nonce,
-            issued_at,
-            expiration_time,
-            not_before,
-            request_id,
-            resources,
-        })
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum VerificationError {
-    #[error(transparent)]
-    Crypto(#[from] k256::ecdsa::Error),
-    #[error(transparent)]
-    Serialization(#[from] fmt::Error),
-    #[error("Recovered key does not match address")]
-    Signer,
-}
-
-impl Message {
-    pub fn verify_eip191(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
-        use k256::{
-            ecdsa::{
-                recoverable::{Id, Signature},
-                signature::Signature as S,
-                Error, Signature as Sig, VerifyingKey,
-            },
-            elliptic_curve::sec1::ToEncodedPoint,
-        };
-        use sha3::{Digest, Keccak256};
-        let pk = Signature::new(&Sig::from_bytes(&sig[..64])?, Id::new(&sig[64] % 27)?)?
-            .recover_verify_key(&self.eip191_string()?)?;
-
-        if Keccak256::default()
-            .chain(&pk.to_encoded_point(false).as_bytes()[1..])
-            .finalize()[12..]
-            != self.address
-        {
-            Err(VerificationError::Signer)
-        } else {
-            Ok(pk.to_bytes().into_iter().collect())
+    let mut line = lines.next();
+    let exp = match tag_optional(EXP_TAG, line)? {
+        Some(exp) => {
+            TimeStamp::from_str(&exp)?;
+            line = lines.next();
+            Some(exp.into())
         }
-    }
+        None => None,
+    };
+    let nbf = match tag_optional(NBF_TAG, line)? {
+        Some(nbf) => {
+            TimeStamp::from_str(nbf)?;
+            line = lines.next();
+            Some(nbf.into())
+        }
+        None => None,
+    };
 
-    pub fn valid_now(&self) -> bool {
-        let now = Utc::now();
-        self.not_before
-            .as_ref()
-            .and_then(|s| TimeStamp::from_str(s).ok())
-            .map(|nbf| now >= nbf)
-            .unwrap_or(true)
-            && self
-                .expiration_time
-                .as_ref()
-                .and_then(|s| TimeStamp::from_str(s).ok())
-                .map(|exp| now < exp)
-                .unwrap_or(true)
-    }
+    let requestId = match tag_optional(RID_TAG, line)? {
+        Some(rid) => {
+            line = lines.next();
+            Some(rid.into())
+        }
+        None => None,
+    };
 
-    pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {
-        let s = self.to_string();
-        Ok(format!("\x19Ethereum Signed Message:\n{}{}", s.as_bytes().len(), s).into())
-    }
+    let resources = match line {
+        Some(RES_TAG) => lines.map(|s| parse_line("- ", Some(s))).collect(),
+        Some(_) => Err(ParseError::Format("Unexpected Content")),
+        None => Ok(vec![]),
+    }?;
 
-    pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
-        use sha3::{Digest, Keccak256};
-        Ok(Keccak256::default()
-            .chain(&self.eip191_string()?)
-            .finalize()
-            .into())
-    }
+    let iss = UriAbsoluteString::from_str(&format!(
+        "did:pkh:eip155:{}:0x{}",
+        chain_id,
+        hex::encode(address)
+    ))?;
+
+    Ok(Payload {
+        aud,
+        iss,
+        statement,
+        uri,
+        version,
+        nonce,
+        iat,
+        exp,
+        nbf,
+        requestId,
+        resources,
+    })
 }
 
 const PREAMBLE: &'static str = " wants you to sign in with your Ethereum account:";
@@ -269,7 +189,6 @@ const RES_TAG: &'static str = "Resources:";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex::FromHex;
 
     #[test]
     fn parsing() {
@@ -288,12 +207,12 @@ Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
 - https://example.com/my-web2-claim.json"#;
 
-        assert!(Message::from_str(message).is_ok());
+        let m = from_str(message).unwrap();
 
-        assert_eq!(message, &Message::from_str(message).unwrap().to_string());
+        assert_eq!(message, &EIP4361::serialize(&m).unwrap());
 
         // incorrect order
-        assert!(Message::from_str(
+        assert!(from_str(
             r#"service.org wants you to sign in with your Ethereum account:
 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
 
@@ -309,47 +228,5 @@ Resources:
 - https://example.com/my-web2-claim.json"#,
         )
         .is_err())
-    }
-
-    #[test]
-    fn validation() {
-        let message = Message::from_str(
-            r#"login.xyz wants you to sign in with your Ethereum account:
-0xb8a316ea8a9e48ebd25b73c71bc0f22f5c337d1f
-
-Sign-In With Ethereum Example Statement
-
-URI: https://login.xyz
-Version: 1
-Chain ID: 1
-Nonce: uolthxpe
-Issued At: 2021-11-25T02:36:37.013Z"#,
-        )
-        .unwrap();
-        let correct = <[u8; 65]>::from_hex(r#"6eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
-        let incorrect = <[u8; 65]>::from_hex(r#"7eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
-    }
-
-    #[test]
-    fn validation1() {
-        let message = Message::from_str(
-            r#"login.xyz wants you to sign in with your Ethereum account:
-0x4b60ffaf6fd681abcc270faf4472011a4a14724c
-
-sign-In With Ethereum Example Statement
-
-URI: https://login.xyz
-Version: 1
-Chain ID: 1
-Nonce: k13wuejc
-Issued At: 2021-11-12T17:37:48.462Z"#,
-        )
-        .unwrap();
-        let correct = <[u8; 65]>::from_hex(r#"40208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
-        let incorrect = <[u8; 65]>::from_hex(r#"50208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
     }
 }

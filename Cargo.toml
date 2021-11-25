@@ -17,3 +17,7 @@ k256 = { version = "0.9", default-features = false, features = ["std", "ecdsa", 
 sha3 = "0.9"
 thiserror = "1.0"
 url = "2.2"
+async-trait = "0.1"
+
+[dev-dependencies]
+async-std = { version = "1.10", features = ["attributes"] }
