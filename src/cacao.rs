@@ -49,6 +49,8 @@ pub enum VerificationError<S, E> {
     Serialization(#[from] S),
     #[error("Missing Payload Verification Material")]
     MissingVerificationMaterial,
+    #[error("Not Currently Valid")]
+    NotCurrentlyValid,
     #[error(transparent)]
     Custom(E),
 }
@@ -75,6 +77,9 @@ where
     where
         Self: Sized,
     {
+        if !payload.p.valid_now() {
+            return Err(Self::Err::NotCurrentlyValid)
+        };
         Ok(Self::SigType::verify(
             &Self::Rep::serialize(&payload.p)?.into(),
             &Self::SigType::get_vmat(payload).ok_or(Self::Err::MissingVerificationMaterial)?,
