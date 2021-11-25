@@ -41,25 +41,25 @@ Issued At: 2021-11-12T17:37:48.462Z"#,
 
     #[async_std::test]
     async fn validation1() {
-        // from siwe tests, they're wrong w.r.t order of chain-id, nonce and iat??
+        // from siwe tests
         let message = from_str(
             r#"login.xyz wants you to sign in with your Ethereum account:
-0xe2f03cb7a54ddd886da9b0d227bfcb2d61429699
+0xb8a316ea8a9e48ebd25b73c71bc0f22f5c337d1f
 
 Sign-In With Ethereum Example Statement
 
 URI: https://login.xyz
 Version: 1
 Chain ID: 1
-Nonce: k13wuejc
-Issued At: 2021-11-12T17:37:48.462Z"#,
+Nonce: uolthxpe
+Issued At: 2021-11-25T02:36:37.013Z"#,
         )
         .unwrap();
-        let correct = <[u8; 65]>::from_hex(r#"795110331a07a4d475419fbdb346feb4c0579dcc8228989964474e07d98dbf425f38776cd6ca037f58288acc7b15e720c9cecac988479177fb70592f2391aaff1b"#).unwrap();
+        let correct = <[u8; 65]>::from_hex(r#"6eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
         WalletSIWE::verify(&message.clone().sign(BasicSignature { s: correct }))
             .await
             .unwrap();
-        let incorrect = <[u8; 65]>::from_hex(r#"895110331a07a4d475419fbdb346feb4c0579dcc8228989964474e07d98dbf425f38776cd6ca037f58288acc7b15e720c9cecac988479177fb70592f2391aaff1b"#).unwrap();
+        let incorrect = <[u8; 65]>::from_hex(r#"7eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
         assert!(
             WalletSIWE::verify(&message.sign(BasicSignature { s: incorrect }))
                 .await
