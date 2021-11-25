@@ -203,11 +203,16 @@ pub enum VerificationError {
 impl Message {
     pub fn verify_eip191(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
-            ecdsa::{recoverable::Signature, signature::Signature as s},
+            ecdsa::{
+                recoverable::{Id, Signature},
+                signature::Signature as S,
+                Error, Signature as Sig, VerifyingKey,
+            },
             elliptic_curve::sec1::ToEncodedPoint,
         };
         use sha3::{Digest, Keccak256};
-        let pk = Signature::from_bytes(&sig)?.recover_verify_key(&self.eip191_string()?)?;
+        let pk = Signature::new(&Sig::from_bytes(&sig[..64])?, Id::new(&sig[64] % 27)?)?
+            .recover_verify_key(&self.eip191_string()?)?;
 
         if Keccak256::default()
             .chain(&pk.to_encoded_point(false).as_bytes()[1..])
@@ -264,6 +269,7 @@ const RES_TAG: &'static str = "Resources:";
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hex::FromHex;
 
     #[test]
     fn parsing() {
@@ -307,7 +313,6 @@ Resources:
 
     #[test]
     fn validation() {
-        use hex::FromHex;
         let message = Message::from_str(
             r#"login.xyz wants you to sign in with your Ethereum account:
 0xe2f03cb7a54ddd886da9b0d227bfcb2d61429699
@@ -324,6 +329,27 @@ Issued At: 2021-11-12T17:37:48.462Z"#,
         let correct = <[u8; 65]>::from_hex(r#"795110331a07a4d475419fbdb346feb4c0579dcc8228989964474e07d98dbf425f38776cd6ca037f58288acc7b15e720c9cecac988479177fb70592f2391aaff1b"#).unwrap();
         assert!(message.verify_eip191(correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"895110331a07a4d475419fbdb346feb4c0579dcc8228989964474e07d98dbf425f38776cd6ca037f58288acc7b15e720c9cecac988479177fb70592f2391aaff1b"#).unwrap();
+        assert!(message.verify_eip191(incorrect).is_err());
+    }
+
+    #[test]
+    fn validation1() {
+        let message = Message::from_str(
+            r#"login.xyz wants you to sign in with your Ethereum account:
+0x4b60ffaf6fd681abcc270faf4472011a4a14724c
+
+sign-In With Ethereum Example Statement
+
+URI: https://login.xyz
+Version: 1
+Chain ID: 1
+Nonce: k13wuejc
+Issued At: 2021-11-12T17:37:48.462Z"#,
+        )
+        .unwrap();
+        let correct = <[u8; 65]>::from_hex(r#"40208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
+        assert!(message.verify_eip191(correct).is_ok());
+        let incorrect = <[u8; 65]>::from_hex(r#"50208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
         assert!(message.verify_eip191(incorrect).is_err());
     }
 }
