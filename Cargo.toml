@@ -10,10 +10,11 @@ repository = "https://github.com/spruceid/siwe-rs/"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iri-string = "0.4"
+iri-string = { version = "0.4", features = ["serde-std"] }
 chrono = "0.4"
 hex = "0.4"
 k256 = { version = "0.9", default-features = false, features = ["std", "ecdsa", "keccak256"] }
 sha3 = "0.9"
 thiserror = "1.0"
-url = "2.2"
+url = { version = "2.2", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }

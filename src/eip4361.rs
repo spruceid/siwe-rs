@@ -5,6 +5,7 @@ use core::{
     str::FromStr,
 };
 use iri_string::types::{UriAbsoluteString, UriString};
+use serde::Deserialize;
 use thiserror::Error;
 use url::Host as GHost;
 
@@ -12,7 +13,7 @@ type Host = GHost<String>;
 
 type TimeStamp = DateTime<Utc>;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Deserialize)]
 pub enum Version {
     V1 = 1,
 }
@@ -28,6 +29,7 @@ impl FromStr for Version {
     }
 }
 
+#[derive(Deserialize)]
 pub struct Message {
     pub domain: Host,
     pub address: [u8; 20],
