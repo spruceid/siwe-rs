@@ -41,10 +41,8 @@ impl SignatureType for EIP191 {
         }
     }
 
-    fn get_vmat<S: SignatureScheme<SigType = Self>>(
-        payload: &CACAO<S>,
-    ) -> Option<Self::VerificationMaterial> {
-        match (payload.p.chain_id()?.get(..7), payload.p.address()) {
+    fn get_vmat(payload: &Payload) -> Option<Self::VerificationMaterial> {
+        match (payload.chain_id()?.get(..7), payload.address()) {
             (Some("eip155:"), Some(a)) => <Self::VerificationMaterial>::from_hex(&a[2..]).ok(),
             _ => None,
         }

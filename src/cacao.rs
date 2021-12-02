@@ -11,7 +11,7 @@ pub type TimeStamp = DateTime<Utc>;
 pub struct CACAO<S: SignatureScheme> {
     pub h: Header,
     pub p: Payload,
-    pub s: <<S as SignatureScheme>::SigType as SignatureType>::Signature,
+    pub s: <S::SigType as SignatureType>::Signature,
 }
 
 pub struct Header {
@@ -23,7 +23,6 @@ pub trait SignatureScheme {
     type SigType: SignatureType;
     type RepOutput: Into<<<Self as SignatureScheme>::SigType as SignatureType>::Payload>;
     type Rep: Representation<Output = Self::RepOutput>;
-    type Err;
     fn id() -> String {
         [Self::Rep::ID, "-", Self::SigType::ID].concat()
     }
@@ -31,17 +30,67 @@ pub trait SignatureScheme {
         Header { t: Self::id() }
     }
     async fn verify(
-        payload: &CACAO<Self>,
-    ) -> Result<<<Self as SignatureScheme>::SigType as SignatureType>::Output, Self::Err>
+        payload: &Payload,
+        sig: &<Self::SigType as SignatureType>::Signature,
+    ) -> Result<
+        <Self::SigType as SignatureType>::Output,
+        VerificationError<<Self::Rep as Representation>::Err>,
+    >
     where
-        Self: Sized;
+        Self::RepOutput: Send + Sync,
+        <Self::SigType as SignatureType>::Signature: Send + Sync,
+        <Self::SigType as SignatureType>::Payload: Send + Sync,
+        <Self::SigType as SignatureType>::VerificationMaterial: Send + Sync,
+        <Self::Rep as Representation>::Err: Send + Sync,
+    {
+        if !payload.valid_now() {
+            return Err(VerificationError::NotCurrentlyValid);
+        };
+        Ok(Self::SigType::verify(
+            &Self::Rep::serialize(&payload)?.into(),
+            &Self::SigType::get_vmat(&payload)
+                .ok_or(VerificationError::MissingVerificationMaterial)?,
+            &sig,
+        )
+        .await
+        .map_err(|_| VerificationError::Crypto)?)
+    }
+
+    async fn verify_cacao(
+        payload: &CACAO<Self>,
+    ) -> Result<
+        <<Self as SignatureScheme>::SigType as SignatureType>::Output,
+        VerificationError<<Self::Rep as Representation>::Err>,
+    >
+    where
+        Self: Sized,
+        Self::RepOutput: Send + Sync,
+        <Self::SigType as SignatureType>::Signature: Send + Sync,
+        <Self::SigType as SignatureType>::Payload: Send + Sync,
+        <Self::SigType as SignatureType>::VerificationMaterial: Send + Sync,
+        <Self::Rep as Representation>::Err: Send + Sync,
+    {
+        Self::verify(&payload.p, &payload.s).await
+    }
 }
 
 #[derive(Default)]
 pub struct GenericScheme<R, S>(PhantomData<R>, PhantomData<S>);
 
+#[async_trait]
+impl<R, S, P> SignatureScheme for GenericScheme<R, S>
+where
+    R: Representation<Output = P>,
+    S: SignatureType,
+    P: Into<S::Payload> + Send,
+{
+    type Rep = R;
+    type SigType = S;
+    type RepOutput = P;
+}
+
 #[derive(Error, Debug)]
-pub enum VerificationError<S, E> {
+pub enum VerificationError<S> {
     // pub enum VerificationError<S: StdErr, E: StdErr> {
     #[error("Verification Failed")]
     Crypto,
@@ -51,42 +100,6 @@ pub enum VerificationError<S, E> {
     MissingVerificationMaterial,
     #[error("Not Currently Valid")]
     NotCurrentlyValid,
-    #[error(transparent)]
-    Custom(E),
-}
-
-#[async_trait]
-impl<R, S, P> SignatureScheme for GenericScheme<R, S>
-where
-    R: Representation<Output = P>,
-    S: SignatureType,
-    P: Into<S::Payload> + Send,
-    S::Signature: Sync + Send,
-    S::VerificationMaterial: Send + Sync,
-    S::Payload: Send + Sync,
-    R::Err: Send + Sync
-
-{
-    type Rep = R;
-    type SigType = S;
-    type RepOutput = P;
-    type Err = VerificationError<R::Err, ()>;
-    async fn verify(
-        payload: &CACAO<Self>,
-    ) -> Result<<<Self as SignatureScheme>::SigType as SignatureType>::Output, Self::Err>
-    where
-        Self: Sized,
-    {
-        if !payload.p.valid_now() {
-            return Err(Self::Err::NotCurrentlyValid)
-        };
-        Ok(Self::SigType::verify(
-            &Self::Rep::serialize(&payload.p)?.into(),
-            &Self::SigType::get_vmat(payload).ok_or(Self::Err::MissingVerificationMaterial)?,
-            &payload.s,
-        ).await
-        .map_err(|_| Self::Err::Crypto)?)
-    }
 }
 
 pub struct BasicSignature<S> {
@@ -113,9 +126,7 @@ pub trait SignatureType {
         key: &Self::VerificationMaterial,
         signature: &Self::Signature,
     ) -> Result<Self::Output, Self::Err>;
-    fn get_vmat<S: SignatureScheme<SigType = Self>>(
-        payload: &CACAO<S>,
-    ) -> Option<Self::VerificationMaterial>;
+    fn get_vmat(payload: &Payload) -> Option<Self::VerificationMaterial>;
 }
 
 #[derive(Copy, Clone)]

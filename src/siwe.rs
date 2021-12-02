@@ -26,18 +26,17 @@ Issued At: 2021-11-12T17:37:48.462Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"40208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
-        WalletSIWE::verify(&message.clone().sign(BasicSignature { s: correct }))
+        WalletSIWE::verify(&message.clone(), &BasicSignature { s: correct })
             .await
             .unwrap();
 
         let incorrect = <[u8; 65]>::from_hex(r#"50208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
         assert!(
-            WalletSIWE::verify(&message.sign(BasicSignature { s: incorrect }))
+            WalletSIWE::verify(&message, &BasicSignature { s: incorrect })
                 .await
                 .is_err()
         );
     }
-
 
     #[async_std::test]
     async fn validation1() {
@@ -56,12 +55,12 @@ Issued At: 2021-11-25T02:36:37.013Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
-        WalletSIWE::verify(&message.clone().sign(BasicSignature { s: correct }))
+        WalletSIWE::verify(&message, &BasicSignature { s: correct })
             .await
             .unwrap();
         let incorrect = <[u8; 65]>::from_hex(r#"7eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
         assert!(
-            WalletSIWE::verify(&message.sign(BasicSignature { s: incorrect }))
+            WalletSIWE::verify(&message, &BasicSignature { s: incorrect })
                 .await
                 .is_err()
         );
