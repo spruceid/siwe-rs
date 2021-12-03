@@ -1,11 +1,52 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use iri_string::types::{UriAbsoluteString, UriString};
-use std::{marker::PhantomData, str::FromStr};
+use std::{fmt, marker::PhantomData, num::ParseIntError, str::FromStr};
 use thiserror::Error;
-use url::Host as GHost;
+use url::{Host, ParseError};
 
-pub type Host = GHost<String>;
+#[derive(Clone, Debug)]
+pub struct Authority(Option<String>, Host<String>, Option<u64>);
+
+impl fmt::Display for Authority {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        if let Some(user) = &self.0 {
+            write!(f, "{}@", user)?;
+        };
+        write!(f, "{}", &self.1)?;
+        if let Some(port) = &self.2 {
+            write!(f, ":{}", port)?;
+        };
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum AuthorityParseError {
+    #[error("Invalid User")]
+    User,
+    #[error("Invalid Host: {0}")]
+    Host(#[from] ParseError),
+    #[error("Invalid Port: {0}")]
+    Port(#[from] ParseIntError),
+}
+
+impl FromStr for Authority {
+    type Err = AuthorityParseError;
+    fn from_str(st: &str) -> Result<Self, Self::Err> {
+        let s = st;
+        let (user, s) = match s.split_once("@") {
+            Some((u, r)) => (Some(u.into()), r),
+            None => (None, st),
+        };
+        let (port, s) = match s.split_once(":") {
+            Some((h, p)) => (Some(p.parse()?), h),
+            None => (None, s),
+        };
+        Ok(Self(user, Host::parse(s)?, port))
+    }
+}
+
 pub type TimeStamp = DateTime<Utc>;
 
 pub struct CACAO<S: SignatureScheme> {
@@ -183,7 +224,7 @@ pub enum Version {
 
 #[derive(Clone)]
 pub struct Payload {
-    pub domain: Host,
+    pub domain: Authority,
     pub iss: UriAbsoluteString,
     pub statement: String,
     pub aud: UriAbsoluteString,

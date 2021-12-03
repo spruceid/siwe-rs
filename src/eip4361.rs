@@ -60,7 +60,7 @@ impl Parse for EIP4361 {
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Invalid Domain: {0}")]
-    Domain(#[from] url::ParseError),
+    Domain(#[from] AuthorityParseError),
     #[error("Formatting Error: {0}")]
     Format(&'static str),
     #[error("Invalid Address: {0}")]
@@ -107,7 +107,7 @@ pub fn from_str(s: &str) -> Result<Payload, ParseError> {
     let domain = lines
         .next()
         .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
-        .map(Host::parse)
+        .map(Authority::from_str)
         .ok_or(ParseError::Format("Missing Preamble Line"))??;
     let address = tagged(ADDR_TAG, lines.next())
         .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
@@ -116,7 +116,6 @@ pub fn from_str(s: &str) -> Result<Payload, ParseError> {
         _ => return Err(ParseError::Statement("Missing Statement")),
     };
     let aud = parse_line(URI_TAG, lines.next())?;
-    let lv: u32 = parse_line(VERSION_TAG, lines.next())?;
     let version = match parse_line(VERSION_TAG, lines.next())? {
         1u32 => Version::V1,
         _ => return Err(ParseError::Format("Bad Version")),
