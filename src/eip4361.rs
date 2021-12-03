@@ -50,6 +50,13 @@ impl Representation for EIP4361 {
     }
 }
 
+impl Parse for EIP4361 {
+    type ParseErr = ParseError;
+    fn deserialize(s: &Self::Output) -> Result<Payload, Self::ParseErr> {
+        from_str(s)
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Invalid Domain: {0}")]
@@ -205,15 +212,16 @@ Nonce: 32891756
 Issued At: 2021-09-30T16:25:24Z
 Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
-- https://example.com/my-web2-claim.json"#;
+- https://example.com/my-web2-claim.json"#
+            .into();
 
-        let m = from_str(message).unwrap();
+        let m = EIP4361::deserialize(&message).unwrap();
 
-        assert_eq!(message, &EIP4361::serialize(&m).unwrap());
+        assert_eq!(message, EIP4361::serialize(&m).unwrap());
 
         // incorrect order
-        assert!(from_str(
-            r#"service.org wants you to sign in with your Ethereum account:
+        assert!(EIP4361::deserialize(
+            &r#"service.org wants you to sign in with your Ethereum account:
 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
 
 I accept the ServiceOrg Terms of Service: https://service.org/tos
@@ -225,7 +233,8 @@ Chain ID: 1
 Issued At: 2021-09-30T16:25:24Z
 Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
-- https://example.com/my-web2-claim.json"#,
+- https://example.com/my-web2-claim.json"#
+                .into(),
         )
         .is_err())
     }

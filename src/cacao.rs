@@ -155,6 +155,11 @@ pub trait Representation {
     fn serialize(payload: &Payload) -> Result<Self::Output, Self::Err>;
 }
 
+pub trait Parse: Representation {
+    type ParseErr;
+    fn deserialize(rep: &Self::Output) -> Result<Payload, Self::ParseErr>;
+}
+
 #[async_trait]
 pub trait SignatureType {
     const ID: &'static str;
@@ -225,6 +230,15 @@ impl Payload {
         &self,
     ) -> Result<S::RepOutput, <S::Rep as Representation>::Err> {
         S::Rep::serialize(&self)
+    }
+
+    pub fn parse<S: SignatureScheme, R>(
+        rep: &S::RepOutput,
+    ) -> Result<Self, <S::Rep as Parse>::ParseErr>
+    where
+        S::Rep: Parse,
+    {
+        S::Rep::deserialize(rep)
     }
 
     pub fn address<'a>(&'a self) -> Option<&'a str> {
