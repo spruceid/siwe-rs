@@ -15,10 +15,10 @@ impl Representation for EIP4361 {
     type Output = String;
     fn serialize(payload: &Payload) -> Result<Self::Output, Self::Err> {
         let mut w = String::new();
-        writeln!(&mut w, "{}{}", &payload.aud, PREAMBLE)?;
+        writeln!(&mut w, "{}{}", &payload.domain, PREAMBLE)?;
         writeln!(&mut w, "{}", &payload.address().ok_or(Error)?)?;
         writeln!(&mut w, "\n{}\n", &payload.statement)?;
-        writeln!(&mut w, "{}{}", URI_TAG, &payload.uri)?;
+        writeln!(&mut w, "{}{}", URI_TAG, &payload.aud)?;
         writeln!(&mut w, "{}{}", VERSION_TAG, payload.version as u64)?;
         writeln!(
             &mut w,
@@ -97,7 +97,7 @@ fn tag_optional<'a>(
 pub fn from_str(s: &str) -> Result<Payload, ParseError> {
     use hex::FromHex;
     let mut lines = s.split("\n");
-    let aud = lines
+    let domain = lines
         .next()
         .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
         .map(Host::parse)
@@ -108,11 +108,11 @@ pub fn from_str(s: &str) -> Result<Payload, ParseError> {
         (Some(""), Some(s), Some("")) => s.to_string(),
         _ => return Err(ParseError::Statement("Missing Statement")),
     };
-    let uri = parse_line(URI_TAG, lines.next())?;
-    let version = if 1u32 == parse_line(VERSION_TAG, lines.next())? {
-        Version::V1
-    } else {
-        return Err(ParseError::Format("Bad Version"));
+    let aud = parse_line(URI_TAG, lines.next())?;
+    let lv: u32 = parse_line(VERSION_TAG, lines.next())?;
+    let version = match parse_line(VERSION_TAG, lines.next())? {
+        1u32 => Version::V1,
+        _ => return Err(ParseError::Format("Bad Version")),
     };
     let chain_id = tagged(CHAIN_TAG, lines.next())?;
     let nonce = parse_line(NONCE_TAG, lines.next())?;
@@ -160,15 +160,15 @@ pub fn from_str(s: &str) -> Result<Payload, ParseError> {
     ))?;
 
     Ok(Payload {
-        aud,
+        domain,
         iss,
         statement,
-        uri,
+        aud,
         version,
         nonce,
         iat,
-        exp,
         nbf,
+        exp,
         requestId,
         resources,
     })

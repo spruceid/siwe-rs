@@ -34,7 +34,9 @@ impl SignatureType for EIP191 {
 
         if &Keccak256::default()
             .chain(&vk.to_encoded_point(false).as_bytes()[1..])
-            .finalize()[12..] == address {
+            .finalize()[12..]
+            == address
+        {
             Ok(vk)
         } else {
             Err(Self::Err::new())

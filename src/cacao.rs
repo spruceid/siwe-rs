@@ -9,9 +9,51 @@ pub type Host = GHost<String>;
 pub type TimeStamp = DateTime<Utc>;
 
 pub struct CACAO<S: SignatureScheme> {
-    pub h: Header,
-    pub p: Payload,
-    pub s: <S::SigType as SignatureType>::Signature,
+    h: Header,
+    p: Payload,
+    s: <S::SigType as SignatureType>::Signature,
+}
+
+impl<S> CACAO<S>
+where
+    S: SignatureScheme,
+{
+    pub fn new(p: Payload, s: <S::SigType as SignatureType>::Signature) -> Self {
+        Self {
+            h: S::header(),
+            p,
+            s,
+        }
+    }
+
+    pub fn header(&self) -> &Header {
+        &self.h
+    }
+
+    pub fn payload(&self) -> &Payload {
+        &self.p
+    }
+
+    pub fn signature(&self) -> &<S::SigType as SignatureType>::Signature {
+        &self.s
+    }
+
+    pub async fn verify(
+        &self,
+    ) -> Result<
+        <S::SigType as SignatureType>::Output,
+        VerificationError<<S::Rep as Representation>::Err>,
+    >
+    where
+        S: Send + Sync,
+        S::RepOutput: Send + Sync,
+        <S::SigType as SignatureType>::Signature: Send + Sync,
+        <S::SigType as SignatureType>::Payload: Send + Sync,
+        <S::SigType as SignatureType>::VerificationMaterial: Send + Sync,
+        <S::Rep as Representation>::Err: Send + Sync,
+    {
+        S::verify_cacao(&self).await
+    }
 }
 
 pub struct Header {
@@ -57,7 +99,7 @@ pub trait SignatureScheme {
     }
 
     async fn verify_cacao(
-        payload: &CACAO<Self>,
+        cacao: &CACAO<Self>,
     ) -> Result<
         <<Self as SignatureScheme>::SigType as SignatureType>::Output,
         VerificationError<<Self::Rep as Representation>::Err>,
@@ -70,7 +112,7 @@ pub trait SignatureScheme {
         <Self::SigType as SignatureType>::VerificationMaterial: Send + Sync,
         <Self::Rep as Representation>::Err: Send + Sync,
     {
-        Self::verify(&payload.p, &payload.s).await
+        Self::verify(cacao.payload(), cacao.signature()).await
     }
 }
 
@@ -136,17 +178,17 @@ pub enum Version {
 
 #[derive(Clone)]
 pub struct Payload {
-    pub aud: Host,
-    pub exp: Option<String>,
-    pub iat: String,
+    pub domain: Host,
     pub iss: UriAbsoluteString,
-    pub nbf: Option<String>,
-    pub uri: UriAbsoluteString,
-    pub nonce: String,
+    pub statement: String,
+    pub aud: UriAbsoluteString,
     pub version: Version,
+    pub nonce: String,
+    pub iat: String,
+    pub exp: Option<String>,
+    pub nbf: Option<String>,
     pub requestId: Option<String>,
     pub resources: Vec<UriString>,
-    pub statement: String,
 }
 
 impl Payload {
@@ -159,6 +201,30 @@ impl Payload {
             p: self,
             s,
         }
+    }
+
+    pub async fn verify<S: SignatureScheme>(
+        &self,
+        s: &<<S as SignatureScheme>::SigType as SignatureType>::Signature,
+    ) -> Result<
+        <S::SigType as SignatureType>::Output,
+        VerificationError<<S::Rep as Representation>::Err>,
+    >
+    where
+        S: Send + Sync,
+        S::RepOutput: Send + Sync,
+        <S::SigType as SignatureType>::Signature: Send + Sync,
+        <S::SigType as SignatureType>::Payload: Send + Sync,
+        <S::SigType as SignatureType>::VerificationMaterial: Send + Sync,
+        <S::Rep as Representation>::Err: Send + Sync,
+    {
+        S::verify(&self, s).await
+    }
+
+    pub fn represent<S: SignatureScheme>(
+        &self,
+    ) -> Result<S::RepOutput, <S::Rep as Representation>::Err> {
+        S::Rep::serialize(&self)
     }
 
     pub fn address<'a>(&'a self) -> Option<&'a str> {
