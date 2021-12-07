@@ -44,11 +44,27 @@ impl SignatureType for EIP191 {
     }
 
     fn get_vmat(payload: &Payload) -> Option<Self::VerificationMaterial> {
-        match (payload.chain_id()?.get(..7), payload.address()) {
+        match (
+            did_pkh_chain_id(payload.iss())?.get(..7),
+            did_pkh_addr(payload.iss()),
+        ) {
             (Some("eip155:"), Some(a)) => <Self::VerificationMaterial>::from_hex(&a[2..]).ok(),
             _ => None,
         }
     }
+}
+
+pub fn did_pkh_addr(d: &str) -> Option<&str> {
+    let s: Vec<&str> = d.split(':').collect();
+    match (s.get(1), s.get(4)) {
+        (Some(&"pkh"), Some(a)) => Some(a),
+        _ => None,
+    }
+}
+
+pub fn did_pkh_chain_id(d: &str) -> Option<&str> {
+    let rest = d.strip_prefix("did:pkh:")?;
+    Some(rest.split_at(rest.rfind(':').unwrap_or(rest.len())).0)
 }
 
 pub fn get_eip191_bytes<P: AsRef<[u8]>>(payload: P) -> Vec<u8> {

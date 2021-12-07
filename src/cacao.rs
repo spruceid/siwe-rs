@@ -174,7 +174,6 @@ where
 
 #[derive(Error, Debug)]
 pub enum VerificationError<S> {
-    // pub enum VerificationError<S: StdErr, E: StdErr> {
     #[error("Verification Failed")]
     Crypto,
     #[error(transparent)]
@@ -280,15 +279,6 @@ impl Payload {
         S::Rep: Parse,
     {
         S::Rep::deserialize(rep)
-    }
-
-    pub fn address<'a>(&'a self) -> Option<&'a str> {
-        self.iss.as_str().split(':').nth(4)
-    }
-
-    pub fn chain_id<'a>(&'a self) -> Option<&'a str> {
-        let rest = self.iss.as_str().strip_prefix("did:pkh:")?;
-        Some(rest.split_at(rest.rfind(':').unwrap_or(rest.len())).0)
     }
 
     pub fn iss<'a>(&'a self) -> &'a str {

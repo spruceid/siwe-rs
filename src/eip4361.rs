@@ -1,4 +1,7 @@
-use super::cacao::*;
+use super::{
+    cacao::*,
+    eip191::{did_pkh_addr, did_pkh_chain_id},
+};
 use iri_string::types::UriAbsoluteString;
 use std::{
     convert::Infallible,
@@ -16,7 +19,7 @@ impl Representation for EIP4361 {
     fn serialize(payload: &Payload) -> Result<Self::Output, Self::Err> {
         let mut w = String::new();
         writeln!(&mut w, "{}{}", &payload.domain, PREAMBLE)?;
-        writeln!(&mut w, "{}", &payload.address().ok_or(Error)?)?;
+        writeln!(&mut w, "{}", &did_pkh_addr(payload.iss()).ok_or(Error)?)?;
         writeln!(&mut w, "\n{}\n", &payload.statement)?;
         writeln!(&mut w, "{}{}", URI_TAG, &payload.aud)?;
         writeln!(&mut w, "{}{}", VERSION_TAG, payload.version as u64)?;
@@ -24,8 +27,7 @@ impl Representation for EIP4361 {
             &mut w,
             "{}{}",
             CHAIN_TAG,
-            &payload
-                .chain_id()
+            &did_pkh_chain_id(payload.iss())
                 .and_then(|c| c.split(':').nth(1))
                 .ok_or(Error)?
         )?;
