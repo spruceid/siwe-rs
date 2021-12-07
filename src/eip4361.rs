@@ -1,14 +1,13 @@
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use core::{
     convert::Infallible,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
+use ethers_core::{types::H160, utils::to_checksum};
+use http::uri::{Authority, InvalidUri};
 use iri_string::types::{UriAbsoluteString, UriString};
 use thiserror::Error;
-use url::Host as GHost;
-
-type Host = GHost<String>;
 
 type TimeStamp = DateTime<Utc>;
 
@@ -29,7 +28,7 @@ impl FromStr for Version {
 }
 
 pub struct Message {
-    pub domain: Host,
+    pub domain: Authority,
     pub address: [u8; 20],
     pub statement: String,
     pub uri: UriAbsoluteString,
@@ -46,7 +45,7 @@ pub struct Message {
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "0x{}", hex::encode(&self.address))?;
+        writeln!(f, "{}", to_checksum(&H160(self.address.into()), None))?;
         writeln!(f, "\n{}\n", &self.statement)?;
         writeln!(f, "{}{}", URI_TAG, &self.uri)?;
         writeln!(f, "{}{}", VERSION_TAG, self.version as u64)?;
@@ -75,7 +74,7 @@ impl Display for Message {
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Invalid Domain: {0}")]
-    Domain(#[from] url::ParseError),
+    Domain(#[from] InvalidUri),
     #[error("Formatting Error: {0}")]
     Format(&'static str),
     #[error("Invalid Address: {0}")]
@@ -124,7 +123,7 @@ impl FromStr for Message {
         let domain = lines
             .next()
             .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
-            .map(Host::parse)
+            .map(Authority::from_str)
             .ok_or(ParseError::Format("Missing Preamble Line"))??;
         let address = tagged(ADDR_TAG, lines.next())
             .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
@@ -206,7 +205,7 @@ impl Message {
             ecdsa::{
                 recoverable::{Id, Signature},
                 signature::Signature as S,
-                Error, Signature as Sig, VerifyingKey,
+                Signature as Sig,
             },
             elliptic_curve::sec1::ToEncodedPoint,
         };
@@ -275,7 +274,7 @@ mod tests {
     fn parsing() {
         // correct order
         let message = r#"service.org wants you to sign in with your Ethereum account:
-0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 
 I accept the ServiceOrg Terms of Service: https://service.org/tos
 
@@ -295,7 +294,7 @@ Resources:
         // incorrect order
         assert!(Message::from_str(
             r#"service.org wants you to sign in with your Ethereum account:
-0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 
 I accept the ServiceOrg Terms of Service: https://service.org/tos
 
@@ -314,42 +313,21 @@ Resources:
     #[test]
     fn validation() {
         let message = Message::from_str(
-            r#"login.xyz wants you to sign in with your Ethereum account:
-0xb8a316ea8a9e48ebd25b73c71bc0f22f5c337d1f
+            r#"localhost:4361 wants you to sign in with your Ethereum account:
+0x6Da01670d8fc844e736095918bbE11fE8D564163
 
-Sign-In With Ethereum Example Statement
+SIWE Notepad Example
 
-URI: https://login.xyz
+URI: http://localhost:4361
 Version: 1
 Chain ID: 1
-Nonce: uolthxpe
-Issued At: 2021-11-25T02:36:37.013Z"#,
+Nonce: kEWepMt9knR6lWJ6A
+Issued At: 2021-12-07T18:28:18.807Z"#,
         )
         .unwrap();
-        let correct = <[u8; 65]>::from_hex(r#"6eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
+        let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
         assert!(message.verify_eip191(correct).is_ok());
-        let incorrect = <[u8; 65]>::from_hex(r#"7eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
-    }
-
-    #[test]
-    fn validation1() {
-        let message = Message::from_str(
-            r#"login.xyz wants you to sign in with your Ethereum account:
-0x4b60ffaf6fd681abcc270faf4472011a4a14724c
-
-sign-In With Ethereum Example Statement
-
-URI: https://login.xyz
-Version: 1
-Chain ID: 1
-Nonce: k13wuejc
-Issued At: 2021-11-12T17:37:48.462Z"#,
-        )
-        .unwrap();
-        let correct = <[u8; 65]>::from_hex(r#"40208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
-        let incorrect = <[u8; 65]>::from_hex(r#"50208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
+        let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
         assert!(message.verify_eip191(incorrect).is_err());
     }
 }
