@@ -4,7 +4,7 @@ use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
-use iri_string::types::{UriAbsoluteString, UriString};
+use iri_string::types::{IriReferenceString, IriString};
 use thiserror::Error;
 use url::Host as GHost;
 
@@ -12,7 +12,7 @@ type Host = GHost<String>;
 
 type TimeStamp = DateTime<Utc>;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Version {
     V1 = 1,
 }
@@ -28,11 +28,12 @@ impl FromStr for Version {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Message {
     pub domain: Host,
     pub address: [u8; 20],
     pub statement: String,
-    pub uri: UriAbsoluteString,
+    pub uri: IriString,
     pub version: Version,
     pub chain_id: String,
     pub nonce: String,
@@ -40,7 +41,7 @@ pub struct Message {
     pub expiration_time: Option<String>,
     pub not_before: Option<String>,
     pub request_id: Option<String>,
-    pub resources: Vec<UriString>,
+    pub resources: Vec<IriReferenceString>,
 }
 
 impl Display for Message {
@@ -201,7 +202,7 @@ pub enum VerificationError {
 }
 
 impl Message {
-    pub fn verify_eip191(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
+    pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
             ecdsa::{
                 recoverable::{Id, Signature},
@@ -286,7 +287,8 @@ Nonce: 32891756
 Issued At: 2021-09-30T16:25:24Z
 Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
-- https://example.com/my-web2-claim.json"#;
+- https://example.com/my-web2-claim.json#get
+- #host"#;
 
         assert!(Message::from_str(message).is_ok());
 
@@ -306,9 +308,33 @@ Chain ID: 1
 Issued At: 2021-09-30T16:25:24Z
 Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
-- https://example.com/my-web2-claim.json"#,
+- https://example.com/my-web2-claim.json#get
+- #host"#,
         )
         .is_err())
+    }
+
+    #[test]
+    fn parsing1() {
+        let m = r#"localhost wants you to sign in with your Ethereum account:
+0xA391f7adD776806c4dFf3886BBe6370be8F73683
+
+Allow localhost to access your orbit using their temporary session key: did:key:z6MksaFv5D1zYGCvDt2fEvDQWhVcMcaSieMmCSc54DDq3Rwh#z6MksaFv5D1zYGCvDt2fEvDQWhVcMcaSieMmCSc54DDq3Rwh
+
+URI: did:key:z6MksaFv5D1zYGCvDt2fEvDQWhVcMcaSieMmCSc54DDq3Rwh#z6MksaFv5D1zYGCvDt2fEvDQWhVcMcaSieMmCSc54DDq3Rwh
+Version: 1
+Chain ID: 1
+Nonce: Ki63qhXvxk0LYfxRE
+Issued At: 2021-12-08T13:09:59.716Z
+Expiration Time: 2021-12-08T13:24:59.715Z
+Resources:
+- kepler://bafk2bzacedmmmpdngsjom66fob3gy3727fvc7dqqirlec3uyei7v2edmueazk/#put
+- kepler://bafk2bzacedmmmpdngsjom66fob3gy3727fvc7dqqirlec3uyei7v2edmueazk/#del
+- kepler://bafk2bzacedmmmpdngsjom66fob3gy3727fvc7dqqirlec3uyei7v2edmueazk/#get
+- kepler://bafk2bzacedmmmpdngsjom66fob3gy3727fvc7dqqirlec3uyei7v2edmueazk/#list"#;
+        println!("{:?}", Message::from_str(m));
+
+        assert!(Message::from_str(m).is_ok());
     }
 
     #[test]
@@ -327,9 +353,9 @@ Issued At: 2021-11-25T02:36:37.013Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
+        assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"7eabbdf0861ca83b6cf98381dcbc3db16dffce9a0449dc8b359718d13b0093c3285b6dea7e84ad1aa4871b63899319a988ddf39df3080bcdc60f68dd0942e8221c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
+        assert!(message.verify_eip191(&incorrect).is_err());
     }
 
     #[test]
@@ -348,8 +374,8 @@ Issued At: 2021-11-12T17:37:48.462Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"40208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
+        assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"50208c53a8939040a9b98edc7a523af4f2eff7ecac17796a9828be055d1e52de53ff813544652ecd7cdeddae01326d778728cb741835b3f135d6fb89865012cf1c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
+        assert!(message.verify_eip191(&incorrect).is_err());
     }
 }
