@@ -6,7 +6,7 @@ use core::{
 };
 use ethers_core::{types::H160, utils::to_checksum};
 use http::uri::{Authority, InvalidUri};
-use iri_string::types::{UriAbsoluteString, UriString};
+use iri_string::types::UriString;
 use thiserror::Error;
 
 type TimeStamp = DateTime<Utc>;
@@ -31,7 +31,7 @@ pub struct Message {
     pub domain: Authority,
     pub address: [u8; 20],
     pub statement: String,
-    pub uri: UriAbsoluteString,
+    pub uri: UriString,
     pub version: Version,
     pub chain_id: String,
     pub nonce: String,
@@ -328,6 +328,30 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
         let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
         assert!(message.verify_eip191(correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
+        assert!(message.verify_eip191(incorrect).is_err());
+    }
+
+    #[test]
+    fn validation1() {
+        let message = Message::from_str(r#"localhost wants you to sign in with your Ethereum account:
+0x4b60ffAf6fD681AbcC270Faf4472011A4A14724C
+
+Allow localhost to access your orbit using their temporary session key: did:key:z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg#z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg
+
+URI: did:key:z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg#z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg
+Version: 1
+Chain ID: 1
+Nonce: PPrtjztx2lYqWbqNs
+Issued At: 2021-12-20T12:29:25.907Z
+Expiration Time: 2021-12-20T12:44:25.906Z
+Resources:
+- kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#put
+- kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#del
+- kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#get
+- kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#list"#).unwrap();
+        let correct = <[u8; 65]>::from_hex(r#"20c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
+        assert!(message.verify_eip191(correct).is_ok());
+        let incorrect = <[u8; 65]>::from_hex(r#"30c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
         assert!(message.verify_eip191(incorrect).is_err());
     }
 }
