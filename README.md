@@ -24,16 +24,25 @@ let message: Message = string_message.parse()?;
 
 ### Verifying and Authenticating a SIWE Message
 
-Verification and Authentication is performed via EIP-191, using the `.address` field of the `Message` as the expected signer:
+Verification and Authentication is performed via EIP-191, using the `address` field of the `Message` as the expected signer. This returns the Ethereum public key of the signer:
 
 ``` rust
-message.verify_eip191(&signature)?;
+let signer: Vec<u8> = message.verify_eip191(&signature)?;
 ```
 
-The time constraints (expiry and not-before) can also be validated:
+The time constraints (expiry and not-before) can also be validated, at current or particular times:
 
 ``` rust
 if message.valid_now() { ... };
+
+// equivalent to
+if message.valid_at(&Utc::now()) { ... };
+```
+
+Combined verification of time constraints and authentication can be done in a single call with `verify`:
+
+``` rust
+let signer: Vec<u8> = message.verify(&signature)?;
 ```
 
 ### Serialization of a SIWE Message
@@ -64,12 +73,8 @@ Parsing and verifying a `Message` is easy:
 let message: Message = str.parse()?;
 let signature: [u8; 65];
 
-if !message.valid_now() {
-    // the message is expired or not yet valid, handle this case
-};
-
-if let Err(e) = message.verify_eip191(signature) {
-    // message cannot be correctly authenticated, handle this case
+if let Err(e) = message.verify(&signature) {
+    // message cannot be correctly authenticated at this time
 }
 
 // do application-specific things

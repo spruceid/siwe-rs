@@ -226,7 +226,7 @@ impl Message {
         }
     }
 
-    pub fn verify(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
+    pub fn verify(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
         if !self.valid_now() {
             Err(VerificationError::Time)
         } else {
