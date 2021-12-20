@@ -27,6 +27,7 @@ impl FromStr for Version {
     }
 }
 
+#[derive(Clone)]
 pub struct Message {
     pub domain: Authority,
     pub address: [u8; 20],
@@ -200,7 +201,7 @@ pub enum VerificationError {
 }
 
 impl Message {
-    pub fn verify_eip191(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
+    pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
             ecdsa::{
                 recoverable::{Id, Signature},
@@ -326,9 +327,9 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
+        assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
+        assert!(message.verify_eip191(&incorrect).is_err());
     }
 
     #[test]
@@ -350,8 +351,8 @@ Resources:
 - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#get
 - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#list"#).unwrap();
         let correct = <[u8; 65]>::from_hex(r#"20c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
-        assert!(message.verify_eip191(correct).is_ok());
+        assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"30c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
-        assert!(message.verify_eip191(incorrect).is_err());
+        assert!(message.verify_eip191(&incorrect).is_err());
     }
 }
