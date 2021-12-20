@@ -62,12 +62,13 @@ Parsing and verifying a `Message` is easy:
 
 ``` rust
 let message: Message = str.parse()?;
+let signature: [u8; 65];
 
 if !message.valid_now() {
     // the message is expired or not yet valid, handle this case
 };
 
-if let Err(e) = message.verify_eip191() {
+if let Err(e) = message.verify_eip191(signature) {
     // message cannot be correctly authenticated, handle this case
 }
 
