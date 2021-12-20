@@ -58,6 +58,22 @@ let eip191_hash: [u8; 32] = message.eip191_hash()?;
 
 ## Example
 
+Parsing and verifying a `Message` is easy:
+
+``` rust
+let message: Message = str.parse()?;
+
+if !message.valid_now() {
+    // the message is expired or not yet valid, handle this case
+};
+
+if let Err(e) = message.verify_eip191() {
+    // message cannot be correctly authenticated, handle this case
+}
+
+// do application-specific things
+```
+
 ## See Also
 
 - [Sign In With Ethereum: Typescript](https://github.com/spruceid/siwe)
