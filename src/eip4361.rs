@@ -197,6 +197,8 @@ pub enum VerificationError {
     Serialization(#[from] fmt::Error),
     #[error("Recovered key does not match address")]
     Signer,
+    #[error("Message is not currently valid")]
+    Time,
 }
 
 impl Message {
@@ -224,18 +226,31 @@ impl Message {
         }
     }
 
+    pub fn verify(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
+        if !self.valid_now() {
+            Err(VerificationError::Time)
+        } else {
+            self.verify_eip191(sig)
+        }
+    }
+
     pub fn valid_now(&self) -> bool {
-        let now = Utc::now();
+        self.valid_at(&Utc::now())
+    }
+
+    pub fn valid_at(&self, t: &TimeStamp) -> bool {
         self.not_before
             .as_ref()
-            .and_then(|s| TimeStamp::from_str(s).ok())
-            .map(|nbf| now >= nbf)
+            .and_then(|s| TimeStamp::from_str(&s).ok())
+            .as_ref()
+            .map(|nbf| t >= nbf)
             .unwrap_or(true)
             && self
                 .expiration_time
                 .as_ref()
-                .and_then(|s| TimeStamp::from_str(s).ok())
-                .map(|exp| now < exp)
+                .and_then(|s| TimeStamp::from_str(&s).ok())
+                .as_ref()
+                .map(|exp| t < exp)
                 .unwrap_or(true)
     }
 
