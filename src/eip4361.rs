@@ -231,7 +231,7 @@ impl Message {
         if !self.valid_now() {
             Err(VerificationError::Time)
         } else {
-            self.verify_eip191(sig)
+            self.verify_eip191(&sig)
         }
     }
 
