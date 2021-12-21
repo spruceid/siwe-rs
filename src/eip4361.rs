@@ -46,7 +46,7 @@ pub struct Message {
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "{}", to_checksum(&H160(self.address.into()), None))?;
+        writeln!(f, "{}", to_checksum(&H160(self.address), None))?;
         writeln!(f, "\n{}\n", &self.statement)?;
         writeln!(f, "{}{}", URI_TAG, &self.uri)?;
         writeln!(f, "{}{}", VERSION_TAG, self.version as u64)?;
@@ -99,9 +99,9 @@ fn tagged<'a>(tag: &'static str, line: Option<&'a str>) -> Result<&'a str, Parse
         .ok_or(ParseError::Format(tag))
 }
 
-fn parse_line<'a, S: FromStr<Err = E>, E: Into<ParseError>>(
+fn parse_line<S: FromStr<Err = E>, E: Into<ParseError>>(
     tag: &'static str,
-    line: Option<&'a str>,
+    line: Option<&str>,
 ) -> Result<S, ParseError> {
     tagged(tag, line).and_then(|s| S::from_str(s).map_err(|e| e.into()))
 }
@@ -110,7 +110,7 @@ fn tag_optional<'a>(
     tag: &'static str,
     line: Option<&'a str>,
 ) -> Result<Option<&'a str>, ParseError> {
-    match tagged(tag, line).map(|s| Some(s)) {
+    match tagged(tag, line).map(Some) {
         Err(ParseError::Format(t)) if t == tag => Ok(None),
         r => r,
     }
@@ -120,7 +120,7 @@ impl FromStr for Message {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use hex::FromHex;
-        let mut lines = s.split("\n");
+        let mut lines = s.split('\n');
         let domain = lines
             .next()
             .and_then(|preamble| preamble.strip_suffix(PREAMBLE))
@@ -144,7 +144,7 @@ impl FromStr for Message {
         let mut line = lines.next();
         let expiration_time = match tag_optional(EXP_TAG, line)? {
             Some(exp) => {
-                TimeStamp::from_str(&exp)?;
+                TimeStamp::from_str(exp)?;
                 line = lines.next();
                 Some(exp.into())
             }
@@ -242,14 +242,14 @@ impl Message {
     pub fn valid_at(&self, t: &TimeStamp) -> bool {
         self.not_before
             .as_ref()
-            .and_then(|s| TimeStamp::from_str(&s).ok())
+            .and_then(|s| TimeStamp::from_str(s).ok())
             .as_ref()
             .map(|nbf| t >= nbf)
             .unwrap_or(true)
             && self
                 .expiration_time
                 .as_ref()
-                .and_then(|s| TimeStamp::from_str(&s).ok())
+                .and_then(|s| TimeStamp::from_str(s).ok())
                 .as_ref()
                 .map(|exp| t < exp)
                 .unwrap_or(true)
@@ -269,17 +269,17 @@ impl Message {
     }
 }
 
-const PREAMBLE: &'static str = " wants you to sign in with your Ethereum account:";
-const ADDR_TAG: &'static str = "0x";
-const URI_TAG: &'static str = "URI: ";
-const VERSION_TAG: &'static str = "Version: ";
-const CHAIN_TAG: &'static str = "Chain ID: ";
-const NONCE_TAG: &'static str = "Nonce: ";
-const IAT_TAG: &'static str = "Issued At: ";
-const EXP_TAG: &'static str = "Expiration Time: ";
-const NBF_TAG: &'static str = "Not Before: ";
-const RID_TAG: &'static str = "Request ID: ";
-const RES_TAG: &'static str = "Resources:";
+const PREAMBLE: &str = " wants you to sign in with your Ethereum account:";
+const ADDR_TAG: &str = "0x";
+const URI_TAG: &str = "URI: ";
+const VERSION_TAG: &str = "Version: ";
+const CHAIN_TAG: &str = "Chain ID: ";
+const NONCE_TAG: &str = "Nonce: ";
+const IAT_TAG: &str = "Issued At: ";
+const EXP_TAG: &str = "Expiration Time: ";
+const NBF_TAG: &str = "Not Before: ";
+const RID_TAG: &str = "Request ID: ";
+const RES_TAG: &str = "Resources:";
 
 #[cfg(test)]
 mod tests {
