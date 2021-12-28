@@ -1,4 +1,4 @@
-# Sign In With Ethereum
+# Sign-In with Ethereum
 
 This crate provides a pure Rust implementation of EIP-4631: Sign In With Ethereum.
 
@@ -82,7 +82,7 @@ if let Err(e) = message.verify(&signature) {
 
 ## See Also
 
-- [Sign In With Ethereum: Typescript](https://github.com/spruceid/siwe)
-- [Example SIWE application: login.xyz](https://github.com/spruceid/loginxyz)
-- [EIP-4361 Specification Draft](https://github.com/spruceid/EIPs/blob/eip-4361/EIPS/eip-4361.md)
+- [Sign-In with Ethereum: TypeScript](https://github.com/spruceid/siwe)
+- [Example SIWE application: login.xyz](https://login.xyz)
+- [EIP-4361 Specification Draft](https://eips.ethereum.org/EIPS/eip-4361)
 - [EIP-191 Specification](https://eips.ethereum.org/EIPS/eip-191)
