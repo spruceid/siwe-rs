@@ -80,6 +80,12 @@ if let Err(e) = message.verify(&signature) {
 // do application-specific things
 ```
 
+## Disclaimer 
+
+Our Rust library for Sign-In with Ethereum has not yet undergone a formal security 
+audit. We welcome continued feedback on the usability, architecture, and security 
+of this implementation.
+
 ## See Also
 
 - [Sign-In with Ethereum: TypeScript](https://github.com/spruceid/siwe)
