@@ -10,8 +10,9 @@ use iri_string::types::UriString;
 use thiserror::Error;
 
 pub mod nonce;
+pub mod rfc3339;
 
-type TimeStamp = DateTime<Utc>;
+pub use rfc3339::TimeStamp;
 
 #[derive(Copy, Clone)]
 pub enum Version {
@@ -38,9 +39,9 @@ pub struct Message {
     pub version: Version,
     pub chain_id: String,
     pub nonce: String,
-    pub issued_at: String,
-    pub expiration_time: Option<String>,
-    pub not_before: Option<String>,
+    pub issued_at: TimeStamp,
+    pub expiration_time: Option<TimeStamp>,
+    pub not_before: Option<TimeStamp>,
     pub request_id: Option<String>,
     pub resources: Vec<UriString>,
 }
@@ -138,25 +139,20 @@ impl FromStr for Message {
         let version = parse_line(VERSION_TAG, lines.next())?;
         let chain_id = parse_line(CHAIN_TAG, lines.next())?;
         let nonce = parse_line(NONCE_TAG, lines.next())?;
-        let issued_at = tagged(IAT_TAG, lines.next()).and_then(|iat| {
-            TimeStamp::from_str(iat)?;
-            Ok(iat.into())
-        })?;
+        let issued_at = tagged(IAT_TAG, lines.next())?.parse()?;
 
         let mut line = lines.next();
         let expiration_time = match tag_optional(EXP_TAG, line)? {
             Some(exp) => {
-                TimeStamp::from_str(exp)?;
                 line = lines.next();
-                Some(exp.into())
+                Some(exp.parse()?)
             }
             None => None,
         };
         let not_before = match tag_optional(NBF_TAG, line)? {
             Some(nbf) => {
-                TimeStamp::from_str(nbf)?;
                 line = lines.next();
-                Some(nbf.into())
+                Some(nbf.parse()?)
             }
             None => None,
         };
@@ -241,19 +237,12 @@ impl Message {
         self.valid_at(&Utc::now())
     }
 
-    pub fn valid_at(&self, t: &TimeStamp) -> bool {
-        self.not_before
-            .as_ref()
-            .and_then(|s| TimeStamp::from_str(s).ok())
-            .as_ref()
-            .map(|nbf| t >= nbf)
-            .unwrap_or(true)
+    pub fn valid_at(&self, t: &DateTime<Utc>) -> bool {
+        self.not_before.as_ref().map(|nbf| nbf < t).unwrap_or(true)
             && self
                 .expiration_time
                 .as_ref()
-                .and_then(|s| TimeStamp::from_str(s).ok())
-                .as_ref()
-                .map(|exp| t < exp)
+                .map(|exp| exp >= t)
                 .unwrap_or(true)
     }
 
