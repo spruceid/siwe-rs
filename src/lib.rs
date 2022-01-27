@@ -37,7 +37,7 @@ pub struct Message {
     pub statement: String,
     pub uri: UriString,
     pub version: Version,
-    pub chain_id: String,
+    pub chain_id: u64,
     pub nonce: String,
     pub issued_at: TimeStamp,
     pub expiration_time: Option<TimeStamp>,
