@@ -413,7 +413,7 @@ Resources:
             uri: fields["uri"].as_str().unwrap().try_into().unwrap(),
             version: <Version as std::str::FromStr>::from_str(fields["version"].as_str().unwrap())
                 .unwrap(),
-            chain_id: fields["chainId"].as_str().unwrap().try_into().unwrap(),
+            chain_id: fields["chainId"].as_u64().unwrap(),
             nonce: fields["nonce"].as_str().unwrap().try_into().unwrap(),
             issued_at: <TimeStamp as std::str::FromStr>::from_str(
                 fields["issuedAt"].as_str().unwrap(),
