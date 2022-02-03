@@ -34,7 +34,7 @@ impl FromStr for Version {
 pub struct Message {
     pub domain: Authority,
     pub address: [u8; 20],
-    pub statement: String,
+    pub statement: Option<String>,
     pub uri: UriString,
     pub version: Version,
     pub chain_id: u64,
@@ -50,7 +50,11 @@ impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
         writeln!(f, "{}", to_checksum(&H160(self.address), None))?;
-        writeln!(f, "\n{}\n", &self.statement)?;
+        writeln!(f)?;
+        if let Some(statement) = &self.statement {
+            writeln!(f, "{}", statement)?;
+        }
+        writeln!(f)?;
         writeln!(f, "{}{}", URI_TAG, &self.uri)?;
         writeln!(f, "{}{}", VERSION_TAG, self.version as u64)?;
         writeln!(f, "{}{}", CHAIN_TAG, &self.chain_id)?;
@@ -131,10 +135,18 @@ impl FromStr for Message {
             .ok_or(ParseError::Format("Missing Preamble Line"))??;
         let address = tagged(ADDR_TAG, lines.next())
             .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
-        let statement = match (lines.next(), lines.next(), lines.next()) {
-            (Some(""), Some(s), Some("")) => s.to_string(),
-            _ => return Err(ParseError::Statement("Missing Statement")),
+
+        // Skip the new line:
+        lines.next();
+        let statement = match lines.next() {
+            None => return Err(ParseError::Format("No lines found after address")),
+            Some("") => None,
+            Some(s) => {
+                lines.next();
+                Some(s.to_string())
+            }
         };
+
         let uri = parse_line(URI_TAG, lines.next())?;
         let version = parse_line(VERSION_TAG, lines.next())?;
         let chain_id = parse_line(CHAIN_TAG, lines.next())?;
@@ -314,7 +326,25 @@ Resources:
 - ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
 - https://example.com/my-web2-claim.json"#,
         )
-        .is_err())
+        .is_err());
+
+        //  no statement
+        let message = r#"service.org wants you to sign in with your Ethereum account:
+0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+
+
+URI: https://service.org/login
+Version: 1
+Chain ID: 1
+Nonce: 32891756
+Issued At: 2021-09-30T16:25:24Z
+Resources:
+- ipfs://bafybeiemxf5abjwjbikoz4mc3a3dla6ual3jsgpdr4cjr3oz3evfyavhwq/
+- https://example.com/my-web2-claim.json"#;
+
+        assert!(Message::from_str(message).is_ok());
+
+        assert_eq!(message, &Message::from_str(message).unwrap().to_string());
     }
 
     #[test]
