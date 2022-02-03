@@ -14,7 +14,7 @@ pub mod rfc3339;
 
 pub use rfc3339::TimeStamp;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Version {
     V1 = 1,
 }
@@ -30,7 +30,7 @@ impl FromStr for Version {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Message {
     pub domain: Authority,
     pub address: [u8; 20],
@@ -390,5 +390,125 @@ Resources:
         assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"30c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
         assert!(message.verify_eip191(&incorrect).is_err());
+    }
+
+    const PARSING_POSITIVE: &str = include_str!("../tests/siwe/test/parsing_positive.json");
+    const PARSING_NEGATIVE: &str = include_str!("../tests/siwe/test/parsing_negative.json");
+    const VALIDATION_POSITIVE: &str = include_str!("../tests/siwe/test/validation_positive.json");
+    const VALIDATION_NEGATIVE: &str = include_str!("../tests/siwe/test/validation_negative.json");
+
+    fn fields_to_message(fields: &serde_json::Value) -> anyhow::Result<Message> {
+        let fields = fields.as_object().unwrap();
+        Ok(Message {
+            domain: fields["domain"].as_str().unwrap().try_into().unwrap(),
+            address: <[u8; 20]>::from_hex(
+                fields["address"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("0x")
+                    .unwrap(),
+            )
+            .unwrap(),
+            statement: fields["statement"].as_str().unwrap().try_into().unwrap(),
+            uri: fields["uri"].as_str().unwrap().try_into().unwrap(),
+            version: <Version as std::str::FromStr>::from_str(fields["version"].as_str().unwrap())
+                .unwrap(),
+            chain_id: fields["chainId"].as_str().unwrap().try_into().unwrap(),
+            nonce: fields["nonce"].as_str().unwrap().try_into().unwrap(),
+            issued_at: <TimeStamp as std::str::FromStr>::from_str(
+                fields["issuedAt"].as_str().unwrap(),
+            )
+            .unwrap(),
+            expiration_time: match fields.get("expirationTime") {
+                Some(e) => Some(<TimeStamp as std::str::FromStr>::from_str(
+                    e.as_str().unwrap(),
+                )?),
+                None => None,
+            },
+            not_before: fields
+                .get("notBefore")
+                .map(|e| <TimeStamp as std::str::FromStr>::from_str(e.as_str().unwrap()).unwrap()),
+            request_id: fields
+                .get("requestId")
+                .map(|e| e.as_str().unwrap().to_string()),
+            resources: fields
+                .get("resources")
+                .map(|e| {
+                    e.as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|r| {
+                            <UriString as std::str::FromStr>::from_str(r.as_str().unwrap()).unwrap()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        })
+    }
+
+    #[test]
+    fn parsing_positive() {
+        let tests: serde_json::Value = serde_json::from_str(PARSING_POSITIVE).unwrap();
+        for (test_name, test) in tests.as_object().unwrap() {
+            print!("{} -> ", test_name);
+            let parsed_message = Message::from_str(test["message"].as_str().unwrap()).unwrap();
+            let fields = &test["fields"];
+            let expected_message = fields_to_message(fields).unwrap();
+            assert!(parsed_message == expected_message);
+            println!("✅")
+        }
+    }
+
+    #[test]
+    fn parsing_negative() {
+        let tests: serde_json::Value = serde_json::from_str(PARSING_NEGATIVE).unwrap();
+        for (test_name, test) in tests.as_object().unwrap() {
+            print!("{} -> ", test_name);
+            assert!(Message::from_str(test.as_str().unwrap()).is_err());
+            println!("✅")
+        }
+    }
+
+    #[test]
+    fn validation_positive() {
+        let tests: serde_json::Value = serde_json::from_str(VALIDATION_POSITIVE).unwrap();
+        for (test_name, test) in tests.as_object().unwrap() {
+            print!("{} -> ", test_name);
+            let fields = &test;
+            let message = fields_to_message(fields).unwrap();
+            let signature = <[u8; 65]>::from_hex(
+                fields.as_object().unwrap()["signature"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("0x")
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(message.verify(signature).is_ok());
+            println!("✅")
+        }
+    }
+
+    #[test]
+    fn validation_negative() {
+        let tests: serde_json::Value = serde_json::from_str(VALIDATION_NEGATIVE).unwrap();
+        for (test_name, test) in tests.as_object().unwrap() {
+            print!("{} -> ", test_name);
+            let fields = &test;
+            let message = fields_to_message(fields);
+            let signature = <[u8; 65]>::from_hex(
+                fields.as_object().unwrap()["signature"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("0x")
+                    .unwrap(),
+            );
+            assert!(
+                message.is_err()
+                    || signature.is_err()
+                    || message.unwrap().verify(signature.unwrap()).is_err()
+            );
+            println!("✅")
+        }
     }
 }

@@ -5,7 +5,7 @@ use core::{
     str::FromStr,
 };
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TimeStamp(String, DateTime<FixedOffset>);
 
 impl<T> From<DateTime<T>> for TimeStamp
