@@ -6,6 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Rust implementation of EIP-4361: Sign In With Ethereum"
 repository = "https://github.com/spruceid/siwe-rs/"
+exclude = ["tests", ".github"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
