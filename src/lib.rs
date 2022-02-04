@@ -409,7 +409,9 @@ Resources:
                     .unwrap(),
             )
             .unwrap(),
-            statement: fields["statement"].as_str().unwrap().try_into().unwrap(),
+            statement: fields
+                .get("statement")
+                .map(|s| s.as_str().unwrap().try_into().unwrap()),
             uri: fields["uri"].as_str().unwrap().try_into().unwrap(),
             version: <Version as std::str::FromStr>::from_str(fields["version"].as_str().unwrap())
                 .unwrap(),
