@@ -4,14 +4,15 @@ use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
-use ethers_core::{types::H160, utils::to_checksum};
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use thiserror::Error;
 
+mod address;
 pub mod nonce;
 pub mod rfc3339;
 
+use address::to_checksum;
 pub use rfc3339::TimeStamp;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -49,7 +50,7 @@ pub struct Message {
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "{}", to_checksum(&H160(self.address), None))?;
+        writeln!(f, "{}", to_checksum(&self.address, None))?;
         writeln!(f)?;
         if let Some(statement) = &self.statement {
             writeln!(f, "{}", statement)?;
