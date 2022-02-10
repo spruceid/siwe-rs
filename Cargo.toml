@@ -2,7 +2,7 @@
 name = "siwe"
 version = "0.2.0"
 authors = ["Spruce Systems, Inc."]
-edition = "2021"
+edition = "2018"
 license = "MIT OR Apache-2.0"
 description = "Rust implementation of EIP-4361: Sign In With Ethereum"
 repository = "https://github.com/spruceid/siwe-rs/"
