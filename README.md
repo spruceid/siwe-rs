@@ -7,7 +7,7 @@ This crate provides a pure Rust implementation of EIP-4631: Sign In With Ethereu
 SIWE can be easily installed in any Rust project by including it in said project's `cargo.toml` file:
 
 ``` toml
-siwe = "0.1"
+siwe = "0.2"
 ```
 
 ## Usage
