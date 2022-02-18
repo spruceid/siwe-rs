@@ -1,6 +1,6 @@
 # Sign-In with Ethereum
 
-This crate provides a pure Rust implementation of EIP-4631: Sign In With Ethereum.
+This crate provides a pure Rust implementation of EIP-4361: Sign In With Ethereum.
 
 ## Installation
 
