@@ -5,6 +5,7 @@ use core::{
     str::FromStr,
 };
 use ethers_core::{types::H160, utils::to_checksum};
+use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use thiserror::Error;
@@ -126,7 +127,6 @@ fn tag_optional<'a>(
 impl FromStr for Message {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use hex::FromHex;
         let mut lines = s.split('\n');
         let domain = lines
             .next()
@@ -134,6 +134,13 @@ impl FromStr for Message {
             .map(Authority::from_str)
             .ok_or(ParseError::Format("Missing Preamble Line"))??;
         let address = tagged(ADDR_TAG, lines.next())
+            .and_then(|a| {
+                if is_checksum(a) {
+                    Ok(a)
+                } else {
+                    Err(ParseError::Format("Address is not in EIP 55 format"))
+                }
+            })
             .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
 
         // Skip the new line:
@@ -212,6 +219,18 @@ pub enum VerificationError {
     Time,
 }
 
+// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
+pub fn is_checksum(address: &str) -> bool {
+    match <[u8; 20]>::from_hex(address) {
+        Ok(s) => {
+            let sum = to_checksum(&H160(s), None);
+            let sum = sum.trim_start_matches("0x");
+            sum == address
+        }
+        Err(_) => false
+    }
+}
+
 impl Message {
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
@@ -287,7 +306,6 @@ const RES_TAG: &str = "Resources:";
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex::FromHex;
 
     #[test]
     fn parsing() {
@@ -331,7 +349,6 @@ Resources:
         //  no statement
         let message = r#"service.org wants you to sign in with your Ethereum account:
 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
-
 
 URI: https://service.org/login
 Version: 1
@@ -511,6 +528,45 @@ Resources:
                     || message.unwrap().verify(signature.unwrap()).is_err()
             );
             println!("✅")
+        }
+    }
+
+    const VALID_CASES: &'static [&'static str] = &[
+        // From the spec:
+        // All caps
+        "0x52908400098527886E0F7030069857D2E4169EE7",
+        "0x8617E340B3D01FA5F11F306F4090FD50E238070D",
+        // All Lower
+        "0xde709f2102306220921060314715629080e2fb77",
+        "0x27b1fdb04752bbc536007a920d24acb045561c26",
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+        "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+        "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+        "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+    ];
+
+    const INVALID_CASES: &'static [&'static str] = &[
+        // From eip55 Crate:
+        "0xD1220a0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+        "0xdbF03B407c01e7cD3CBea99509d93f8DDDC8C6FB",
+        "0xfb6916095ca1df60bB79Ce92cE3Ea74c37c5D359",
+        "0x5aAeb6053f3E94C9b9A09f33669435E7Ef1BeAed",
+        // FROM SO QUESTION:
+        "0xCF5609B003B2776699EEA1233F7C82D5695CC9AA",
+        // From eip55 Crate Issue
+        "0x000000000000000000000000000000000000dEAD",
+    ];
+
+    #[test]
+    fn test_is_checksum() {
+        for case in VALID_CASES {
+            let c = case.trim_start_matches("0x");
+            assert_eq!(is_checksum(&c), true)
+        }
+
+        for case in INVALID_CASES {
+            let c = case.trim_start_matches("0x");
+            assert_eq!(is_checksum(&c), false)
         }
     }
 }
