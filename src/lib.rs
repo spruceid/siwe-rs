@@ -227,7 +227,7 @@ pub fn is_checksum(address: &str) -> bool {
             let sum = sum.trim_start_matches("0x");
             sum == address
         }
-        Err(_) => false
+        Err(_) => false,
     }
 }
 
