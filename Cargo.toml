@@ -17,7 +17,6 @@ hex = "0.4"
 k256 = { version = "0.9", default-features = false, features = ["std", "ecdsa", "keccak256"] }
 sha3 = "0.9"
 thiserror = "1.0"
-ethers-core = "0.6.2"
 http = "0.2.5"
 rand = "0.8.4"
 
