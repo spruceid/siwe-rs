@@ -4,7 +4,6 @@ use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
-use ethers_core::{types::H160, utils::to_checksum};
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use thiserror::Error;
@@ -49,7 +48,7 @@ pub struct Message {
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "{}", to_checksum(&H160(self.address), None))?;
+        writeln!(f, "{}", eip55(&self.address))?;
         writeln!(f)?;
         if let Some(statement) = &self.statement {
             writeln!(f, "{}", statement)?;
@@ -270,6 +269,20 @@ impl Message {
             .finalize()
             .into())
     }
+}
+
+fn eip55(addr: &[u8; 20]) -> String {
+    use sha3::{Digest, Keccak256};
+    let addr_str = hex::encode(addr);
+    let hash = Keccak256::digest(addr_str.as_bytes());
+    "0x".chars()
+        .chain(addr_str.chars().enumerate().map(|(i, c)| {
+            match (c, hash[i >> 1] & if i % 2 == 0 { 128 } else { 8 } != 0) {
+                ('a'..='f', true) => c.to_ascii_uppercase(),
+                _ => c,
+            }
+        }))
+        .collect()
 }
 
 const PREAMBLE: &str = " wants you to sign in with your Ethereum account:";
