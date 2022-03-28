@@ -271,7 +271,7 @@ impl Message {
     }
 }
 
-fn eip55(addr: &[u8; 20]) -> String {
+pub fn eip55(addr: &[u8; 20]) -> String {
     use sha3::{Digest, Keccak256};
     let addr_str = hex::encode(addr);
     let hash = Keccak256::digest(addr_str.as_bytes());
