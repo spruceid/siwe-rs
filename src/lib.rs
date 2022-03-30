@@ -4,7 +4,6 @@ use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
-use ethers_core::{types::H160, utils::to_checksum};
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use thiserror::Error;
@@ -49,7 +48,7 @@ pub struct Message {
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         writeln!(f, "{}{}", &self.domain, PREAMBLE)?;
-        writeln!(f, "{}", to_checksum(&H160(self.address), None))?;
+        writeln!(f, "{}", eip55(&self.address))?;
         writeln!(f)?;
         if let Some(statement) = &self.statement {
             writeln!(f, "{}", statement)?;
@@ -270,6 +269,20 @@ impl Message {
             .finalize()
             .into())
     }
+}
+
+pub fn eip55(addr: &[u8; 20]) -> String {
+    use sha3::{Digest, Keccak256};
+    let addr_str = hex::encode(addr);
+    let hash = Keccak256::digest(addr_str.as_bytes());
+    "0x".chars()
+        .chain(addr_str.chars().enumerate().map(|(i, c)| {
+            match (c, hash[i >> 1] & if i % 2 == 0 { 128 } else { 8 } != 0) {
+                ('a'..='f' | 'A'..='F', true) => c.to_ascii_uppercase(),
+                _ => c.to_ascii_lowercase(),
+            }
+        }))
+        .collect()
 }
 
 const PREAMBLE: &str = " wants you to sign in with your Ethereum account:";
@@ -512,5 +525,64 @@ Resources:
             );
             println!("✅")
         }
+    }
+
+    #[test]
+    fn eip55_test() {
+        // vectors from https://github.com/ethereum/EIPs/blob/master/EIPS/eip-55.md
+
+        assert!(test_eip55(
+            "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+        ));
+        assert!(test_eip55(
+            "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+            "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+        ));
+        assert!(test_eip55(
+            "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+            "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB"
+        ));
+        assert!(test_eip55(
+            "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+            "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb"
+        ));
+
+        assert!(test_eip55(
+            "0x52908400098527886E0F7030069857D2E4169EE7",
+            "0x52908400098527886E0F7030069857D2E4169EE7",
+        ));
+        assert!(test_eip55(
+            "0x8617e340b3d01fa5f11f306f4090fd50e238070d",
+            "0x8617E340B3D01FA5F11F306F4090FD50E238070D",
+        ));
+        assert!(test_eip55(
+            "0xde709f2102306220921060314715629080e2fb77",
+            "0xde709f2102306220921060314715629080e2fb77",
+        ));
+        assert!(test_eip55(
+            "0x27b1fdb04752bbc536007a920d24acb045561c26",
+            "0x27b1fdb04752bbc536007a920d24acb045561c26"
+        ));
+        assert!(test_eip55(
+            "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+        ));
+        assert!(test_eip55(
+            "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+            "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"
+        ));
+        assert!(test_eip55(
+            "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+            "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+        ));
+        assert!(test_eip55(
+            "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+            "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb"
+        ));
+    }
+
+    fn test_eip55(addr: &str, checksum: &str) -> bool {
+        eip55(&<[u8; 20]>::from_hex(addr.strip_prefix("0x").unwrap()).unwrap()) == checksum
     }
 }
