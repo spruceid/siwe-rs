@@ -156,7 +156,13 @@ impl FromStr for Message {
         let uri = parse_line(URI_TAG, lines.next())?;
         let version = parse_line(VERSION_TAG, lines.next())?;
         let chain_id = parse_line(CHAIN_TAG, lines.next())?;
-        let nonce = parse_line(NONCE_TAG, lines.next())?;
+        let nonce = parse_line(NONCE_TAG, lines.next()).and_then(|nonce: String| {
+            if nonce.len() < 8 {
+                Err(ParseError::Format("Nonce must be longer than 8 characters"))
+            } else {
+                Ok(nonce)
+            }
+        })?;
         let issued_at = tagged(IAT_TAG, lines.next())?.parse()?;
 
         let mut line = lines.next();
@@ -216,6 +222,10 @@ pub enum VerificationError {
     Signer,
     #[error("Message is not currently valid")]
     Time,
+    #[error("Message domain does not match")]
+    DomainMismatch,
+    #[error("Message nonce does not match")]
+    NonceMismatch,
 }
 
 // is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
@@ -255,10 +265,25 @@ impl Message {
         }
     }
 
-    pub fn verify(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
-        if !self.valid_now() {
+    pub fn verify(
+        &self,
+        sig: [u8; 65],
+        domain: Option<&Authority>,
+        nonce: Option<&str>,
+        timestamp: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<u8>, VerificationError> {
+        if match timestamp {
+            None => !self.valid_now(),
+            Some(timestamp) => !self.valid_at(timestamp),
+        } {
             Err(VerificationError::Time)
         } else {
+            if domain.is_some() && *domain.unwrap() != self.domain {
+                return Err(VerificationError::DomainMismatch);
+            }
+            if nonce.is_some() && *nonce.unwrap() != self.nonce {
+                return Err(VerificationError::NonceMismatch);
+            }
             self.verify_eip191(&sig)
         }
     }
@@ -425,8 +450,10 @@ Resources:
 
     const PARSING_POSITIVE: &str = include_str!("../tests/siwe/test/parsing_positive.json");
     const PARSING_NEGATIVE: &str = include_str!("../tests/siwe/test/parsing_negative.json");
-    const VALIDATION_POSITIVE: &str = include_str!("../tests/siwe/test/validation_positive.json");
-    const VALIDATION_NEGATIVE: &str = include_str!("../tests/siwe/test/validation_negative.json");
+    const VERIFICATION_POSITIVE: &str =
+        include_str!("../tests/siwe/test/verification_positive.json");
+    const VERIFICATION_NEGATIVE: &str =
+        include_str!("../tests/siwe/test/verification_negative.json");
 
     fn fields_to_message(fields: &serde_json::Value) -> anyhow::Result<Message> {
         let fields = fields.as_object().unwrap();
@@ -503,8 +530,8 @@ Resources:
     }
 
     #[test]
-    fn validation_positive() {
-        let tests: serde_json::Value = serde_json::from_str(VALIDATION_POSITIVE).unwrap();
+    fn verification_positive() {
+        let tests: serde_json::Value = serde_json::from_str(VERIFICATION_POSITIVE).unwrap();
         for (test_name, test) in tests.as_object().unwrap() {
             print!("{} -> ", test_name);
             let fields = &test;
@@ -517,14 +544,23 @@ Resources:
                     .unwrap(),
             )
             .unwrap();
-            assert!(message.verify(signature).is_ok());
+            let timestamp = fields
+                .as_object()
+                .unwrap()
+                .get("time")
+                .map_or(None, |timestamp| {
+                    DateTime::<Utc>::from_str(timestamp.as_str().unwrap()).ok()
+                });
+            assert!(message
+                .verify(signature, None, None, timestamp.as_ref())
+                .is_ok());
             println!("✅")
         }
     }
 
     #[test]
-    fn validation_negative() {
-        let tests: serde_json::Value = serde_json::from_str(VALIDATION_NEGATIVE).unwrap();
+    fn verification_negative() {
+        let tests: serde_json::Value = serde_json::from_str(VERIFICATION_NEGATIVE).unwrap();
         for (test_name, test) in tests.as_object().unwrap() {
             print!("{} -> ", test_name);
             let fields = &test;
@@ -536,10 +572,37 @@ Resources:
                     .strip_prefix("0x")
                     .unwrap(),
             );
+            let domain_binding = fields
+                .as_object()
+                .unwrap()
+                .get("domainBinding")
+                .map_or(None, |domain_binding| {
+                    Authority::from_str(domain_binding.as_str().unwrap()).ok()
+                });
+            let match_nonce = fields
+                .as_object()
+                .unwrap()
+                .get("matchNonce")
+                .map_or(None, |match_nonce| match_nonce.as_str());
+            let timestamp = fields
+                .as_object()
+                .unwrap()
+                .get("time")
+                .map_or(None, |timestamp| {
+                    DateTime::<Utc>::from_str(timestamp.as_str().unwrap()).ok()
+                });
             assert!(
                 message.is_err()
                     || signature.is_err()
-                    || message.unwrap().verify(signature.unwrap()).is_err()
+                    || message
+                        .unwrap()
+                        .verify(
+                            signature.unwrap(),
+                            domain_binding.as_ref(),
+                            match_nonce,
+                            timestamp.as_ref(),
+                        )
+                        .is_err()
             );
             println!("✅")
         }
