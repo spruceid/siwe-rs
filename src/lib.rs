@@ -137,7 +137,7 @@ impl FromStr for Message {
                 if is_checksum(a) {
                     Ok(a)
                 } else {
-                    Err(ParseError::Format("Address is not in EIP 55 format"))
+                    Err(ParseError::Format("Address is not in EIP-55 format"))
                 }
             })
             .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
@@ -241,6 +241,15 @@ pub fn is_checksum(address: &str) -> bool {
 }
 
 impl Message {
+    /// Validates the integrity of the object by matching it's signature.
+    ///
+    /// # Arguments
+    /// - `sig` - Signature of the message signed by the wallet
+    ///
+    /// # Example
+    /// ``` rust
+    /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
+    /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
             ecdsa::{
@@ -265,6 +274,25 @@ impl Message {
         }
     }
 
+    /// Validates time constraints and integrity of the object by matching it's signature.
+    ///
+    /// # Arguments
+    /// - `sig` - Signature of the message signed by the wallet
+    /// - `domain` - RFC 4501 dns authority that is requesting the signing (Optional)
+    /// - `nonce` - Randomized token used to prevent replay attacks, at least 8 alphanumeric characters (Optional)
+    /// - `timestamp` - ISO 8601 datetime string of the current time (Optional)
+    ///
+    /// # Example
+    /// ``` rust
+    /// let message: Message = str.parse()?;
+    /// let signature: [u8; 65];
+    ///
+    /// if let Err(e) = message.verify(&signature) {
+    ///     // message cannot be correctly authenticated at this time
+    /// }
+    ///
+    /// // do application-specific things
+    /// ```
     pub fn verify(
         &self,
         sig: [u8; 65],
@@ -272,26 +300,47 @@ impl Message {
         nonce: Option<&str>,
         timestamp: Option<&DateTime<Utc>>,
     ) -> Result<Vec<u8>, VerificationError> {
-        if match timestamp {
-            None => !self.valid_now(),
-            Some(timestamp) => !self.valid_at(timestamp),
-        } {
-            Err(VerificationError::Time)
-        } else {
-            if domain.is_some() && *domain.unwrap() != self.domain {
-                return Err(VerificationError::DomainMismatch);
-            }
-            if nonce.is_some() && *nonce.unwrap() != self.nonce {
-                return Err(VerificationError::NonceMismatch);
-            }
-            self.verify_eip191(&sig)
-        }
+        match (
+            timestamp
+                .map(|t| self.valid_at(t))
+                .unwrap_or_else(|| self.valid_now()),
+            domain,
+            nonce,
+        ) {
+            (false, _, _) => return Err(VerificationError::Time),
+            (_, Some(d), _) if *d != self.domain => return Err(VerificationError::DomainMismatch),
+            (_, _, Some(n)) if n != self.nonce => return Err(VerificationError::NonceMismatch),
+            _ => (),
+        };
+
+        self.verify_eip191(&sig)
     }
 
+    /// Validates the time constraints of the message at current time.
+    ///
+    /// # Example
+    /// ``` rust
+    /// if message.valid_now() { ... };
+    ///
+    /// // equivalent to
+    /// if message.valid_at(&Utc::now()) { ... };
+    /// ```
     pub fn valid_now(&self) -> bool {
         self.valid_at(&Utc::now())
     }
 
+    /// Validates the time constraints of the message at a specific point in time.
+    ///
+    /// # Arguments
+    /// - `t` - timestamp to use when validating time constraints
+    ///
+    /// # Example
+    /// ``` rust
+    /// if message.valid_now() { ... };
+    ///
+    /// // equivalent to
+    /// if message.valid_at(&Utc::now()) { ... };
+    /// ```
     pub fn valid_at(&self, t: &DateTime<Utc>) -> bool {
         self.not_before.as_ref().map(|nbf| nbf < t).unwrap_or(true)
             && self
@@ -301,11 +350,23 @@ impl Message {
                 .unwrap_or(true)
     }
 
+    /// Produces EIP-191 Personal-Signature pre-hash signing input
+    ///
+    /// # Example
+    /// ``` rust
+    /// let eip191_string: String = message.eip191_string()?;
+    /// ```
     pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {
         let s = self.to_string();
         Ok(format!("\x19Ethereum Signed Message:\n{}{}", s.as_bytes().len(), s).into())
     }
 
+    /// Produces EIP-191 Personal-Signature Hashed signing-input
+    ///
+    /// # Example
+    /// ``` rust
+    /// let eip191_hash: [u8; 32] = message.eip191_hash()?;
+    /// ```
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
         use sha3::{Digest, Keccak256};
         Ok(Keccak256::default()
@@ -404,7 +465,7 @@ Resources:
     }
 
     #[test]
-    fn validation() {
+    fn verification() {
         let message = Message::from_str(
             r#"localhost:4361 wants you to sign in with your Ethereum account:
 0x6Da01670d8fc844e736095918bbE11fE8D564163
@@ -425,7 +486,7 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
     }
 
     #[test]
-    fn validation1() {
+    fn verification1() {
         let message = Message::from_str(r#"localhost wants you to sign in with your Ethereum account:
 0x4b60ffAf6fD681AbcC270Faf4472011A4A14724C
 
