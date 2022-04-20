@@ -247,7 +247,7 @@ impl Message {
     /// - `sig` - Signature of the message signed by the wallet
     ///
     /// # Example
-    /// ``` rust
+    /// ```ignore
     /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
     /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
@@ -283,7 +283,7 @@ impl Message {
     /// - `timestamp` - ISO 8601 datetime string of the current time (Optional)
     ///
     /// # Example
-    /// ``` rust
+    /// ```ignore
     /// let message: Message = str.parse()?;
     /// let signature: [u8; 65];
     ///
@@ -319,7 +319,7 @@ impl Message {
     /// Validates the time constraints of the message at current time.
     ///
     /// # Example
-    /// ``` rust
+    /// ```ignore
     /// if message.valid_now() { ... };
     ///
     /// // equivalent to
@@ -335,7 +335,7 @@ impl Message {
     /// - `t` - timestamp to use when validating time constraints
     ///
     /// # Example
-    /// ``` rust
+    /// ```ignore
     /// if message.valid_now() { ... };
     ///
     /// // equivalent to
@@ -353,7 +353,7 @@ impl Message {
     /// Produces EIP-191 Personal-Signature pre-hash signing input
     ///
     /// # Example
-    /// ``` rust
+    /// ```ignore
     /// let eip191_string: String = message.eip191_string()?;
     /// ```
     pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {
@@ -364,7 +364,7 @@ impl Message {
     /// Produces EIP-191 Personal-Signature Hashed signing-input
     ///
     /// # Example
-    /// ``` rust
+    /// ```ignore
     /// let eip191_hash: [u8; 32] = message.eip191_hash()?;
     /// ```
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
