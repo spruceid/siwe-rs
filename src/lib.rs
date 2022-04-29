@@ -228,7 +228,7 @@ pub enum VerificationError {
     NonceMismatch,
 }
 
-// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
+/// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
 pub fn is_checksum(address: &str) -> bool {
     match <[u8; 20]>::from_hex(address) {
         Ok(s) => {
@@ -376,6 +376,7 @@ impl Message {
     }
 }
 
+/// eip55 takes an eth address and returns it as a checksum formatted string.
 pub fn eip55(addr: &[u8; 20]) -> String {
     use sha3::{Digest, Keccak256};
     let addr_str = hex::encode(addr);
@@ -764,6 +765,9 @@ Resources:
     }
 
     fn test_eip55(addr: &str, checksum: &str) -> bool {
-        eip55(&<[u8; 20]>::from_hex(addr.strip_prefix("0x").unwrap()).unwrap()) == checksum
+        let unprefixed = addr.strip_prefix("0x").unwrap();
+        eip55(&<[u8; 20]>::from_hex(unprefixed).unwrap()) == checksum
+            && eip55(&<[u8; 20]>::from_hex(unprefixed.to_lowercase()).unwrap()) == checksum
+            && eip55(&<[u8; 20]>::from_hex(unprefixed.to_uppercase()).unwrap()) == checksum
     }
 }
