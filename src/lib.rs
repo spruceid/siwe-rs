@@ -4,6 +4,7 @@ use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
+use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use thiserror::Error;
@@ -125,7 +126,6 @@ fn tag_optional<'a>(
 impl FromStr for Message {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use hex::FromHex;
         let mut lines = s.split('\n');
         let domain = lines
             .next()
@@ -133,6 +133,13 @@ impl FromStr for Message {
             .map(Authority::from_str)
             .ok_or(ParseError::Format("Missing Preamble Line"))??;
         let address = tagged(ADDR_TAG, lines.next())
+            .and_then(|a| {
+                if is_checksum(a) {
+                    Ok(a)
+                } else {
+                    Err(ParseError::Format("Address is not in EIP-55 format"))
+                }
+            })
             .and_then(|a| <[u8; 20]>::from_hex(a).map_err(|e| e.into()))?;
 
         // Skip the new line:
@@ -149,7 +156,13 @@ impl FromStr for Message {
         let uri = parse_line(URI_TAG, lines.next())?;
         let version = parse_line(VERSION_TAG, lines.next())?;
         let chain_id = parse_line(CHAIN_TAG, lines.next())?;
-        let nonce = parse_line(NONCE_TAG, lines.next())?;
+        let nonce = parse_line(NONCE_TAG, lines.next()).and_then(|nonce: String| {
+            if nonce.len() < 8 {
+                Err(ParseError::Format("Nonce must be longer than 8 characters"))
+            } else {
+                Ok(nonce)
+            }
+        })?;
         let issued_at = tagged(IAT_TAG, lines.next())?.parse()?;
 
         let mut line = lines.next();
@@ -209,9 +222,34 @@ pub enum VerificationError {
     Signer,
     #[error("Message is not currently valid")]
     Time,
+    #[error("Message domain does not match")]
+    DomainMismatch,
+    #[error("Message nonce does not match")]
+    NonceMismatch,
+}
+
+/// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
+pub fn is_checksum(address: &str) -> bool {
+    match <[u8; 20]>::from_hex(address) {
+        Ok(s) => {
+            let sum = eip55(&s);
+            let sum = sum.trim_start_matches("0x");
+            sum == address
+        }
+        Err(_) => false,
+    }
 }
 
 impl Message {
+    /// Validates the integrity of the object by matching it's signature.
+    ///
+    /// # Arguments
+    /// - `sig` - Signature of the message signed by the wallet
+    ///
+    /// # Example
+    /// ```ignore
+    /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
+    /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
             ecdsa::{
@@ -236,18 +274,73 @@ impl Message {
         }
     }
 
-    pub fn verify(&self, sig: [u8; 65]) -> Result<Vec<u8>, VerificationError> {
-        if !self.valid_now() {
-            Err(VerificationError::Time)
-        } else {
-            self.verify_eip191(&sig)
-        }
+    /// Validates time constraints and integrity of the object by matching it's signature.
+    ///
+    /// # Arguments
+    /// - `sig` - Signature of the message signed by the wallet
+    /// - `domain` - RFC 4501 dns authority that is requesting the signing (Optional)
+    /// - `nonce` - Randomized token used to prevent replay attacks, at least 8 alphanumeric characters (Optional)
+    /// - `timestamp` - ISO 8601 datetime string of the current time (Optional)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let message: Message = str.parse()?;
+    /// let signature: [u8; 65];
+    ///
+    /// if let Err(e) = message.verify(&signature) {
+    ///     // message cannot be correctly authenticated at this time
+    /// }
+    ///
+    /// // do application-specific things
+    /// ```
+    pub fn verify(
+        &self,
+        sig: [u8; 65],
+        domain: Option<&Authority>,
+        nonce: Option<&str>,
+        timestamp: Option<&DateTime<Utc>>,
+    ) -> Result<Vec<u8>, VerificationError> {
+        match (
+            timestamp
+                .map(|t| self.valid_at(t))
+                .unwrap_or_else(|| self.valid_now()),
+            domain,
+            nonce,
+        ) {
+            (false, _, _) => return Err(VerificationError::Time),
+            (_, Some(d), _) if *d != self.domain => return Err(VerificationError::DomainMismatch),
+            (_, _, Some(n)) if n != self.nonce => return Err(VerificationError::NonceMismatch),
+            _ => (),
+        };
+
+        self.verify_eip191(&sig)
     }
 
+    /// Validates the time constraints of the message at current time.
+    ///
+    /// # Example
+    /// ```ignore
+    /// if message.valid_now() { ... };
+    ///
+    /// // equivalent to
+    /// if message.valid_at(&Utc::now()) { ... };
+    /// ```
     pub fn valid_now(&self) -> bool {
         self.valid_at(&Utc::now())
     }
 
+    /// Validates the time constraints of the message at a specific point in time.
+    ///
+    /// # Arguments
+    /// - `t` - timestamp to use when validating time constraints
+    ///
+    /// # Example
+    /// ```ignore
+    /// if message.valid_now() { ... };
+    ///
+    /// // equivalent to
+    /// if message.valid_at(&Utc::now()) { ... };
+    /// ```
     pub fn valid_at(&self, t: &DateTime<Utc>) -> bool {
         self.not_before.as_ref().map(|nbf| nbf < t).unwrap_or(true)
             && self
@@ -257,11 +350,23 @@ impl Message {
                 .unwrap_or(true)
     }
 
+    /// Produces EIP-191 Personal-Signature pre-hash signing input
+    ///
+    /// # Example
+    /// ```ignore
+    /// let eip191_string: String = message.eip191_string()?;
+    /// ```
     pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {
         let s = self.to_string();
         Ok(format!("\x19Ethereum Signed Message:\n{}{}", s.as_bytes().len(), s).into())
     }
 
+    /// Produces EIP-191 Personal-Signature Hashed signing-input
+    ///
+    /// # Example
+    /// ```ignore
+    /// let eip191_hash: [u8; 32] = message.eip191_hash()?;
+    /// ```
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
         use sha3::{Digest, Keccak256};
         Ok(Keccak256::default()
@@ -271,6 +376,7 @@ impl Message {
     }
 }
 
+/// eip55 takes an eth address and returns it as a checksum formatted string.
 pub fn eip55(addr: &[u8; 20]) -> String {
     use sha3::{Digest, Keccak256};
     let addr_str = hex::encode(addr);
@@ -301,7 +407,6 @@ const RES_TAG: &str = "Resources:";
 mod tests {
     use super::*;
     use std::convert::TryInto;
-    use hex::FromHex;
 
     #[test]
     fn parsing() {
@@ -362,7 +467,7 @@ Resources:
     }
 
     #[test]
-    fn validation() {
+    fn verification() {
         let message = Message::from_str(
             r#"localhost:4361 wants you to sign in with your Ethereum account:
 0x6Da01670d8fc844e736095918bbE11fE8D564163
@@ -383,7 +488,7 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
     }
 
     #[test]
-    fn validation1() {
+    fn verification1() {
         let message = Message::from_str(r#"localhost wants you to sign in with your Ethereum account:
 0x4b60ffAf6fD681AbcC270Faf4472011A4A14724C
 
@@ -408,8 +513,10 @@ Resources:
 
     const PARSING_POSITIVE: &str = include_str!("../tests/siwe/test/parsing_positive.json");
     const PARSING_NEGATIVE: &str = include_str!("../tests/siwe/test/parsing_negative.json");
-    const VALIDATION_POSITIVE: &str = include_str!("../tests/siwe/test/validation_positive.json");
-    const VALIDATION_NEGATIVE: &str = include_str!("../tests/siwe/test/validation_negative.json");
+    const VERIFICATION_POSITIVE: &str =
+        include_str!("../tests/siwe/test/verification_positive.json");
+    const VERIFICATION_NEGATIVE: &str =
+        include_str!("../tests/siwe/test/verification_negative.json");
 
     fn fields_to_message(fields: &serde_json::Value) -> anyhow::Result<Message> {
         let fields = fields.as_object().unwrap();
@@ -486,8 +593,8 @@ Resources:
     }
 
     #[test]
-    fn validation_positive() {
-        let tests: serde_json::Value = serde_json::from_str(VALIDATION_POSITIVE).unwrap();
+    fn verification_positive() {
+        let tests: serde_json::Value = serde_json::from_str(VERIFICATION_POSITIVE).unwrap();
         for (test_name, test) in tests.as_object().unwrap() {
             print!("{} -> ", test_name);
             let fields = &test;
@@ -500,14 +607,23 @@ Resources:
                     .unwrap(),
             )
             .unwrap();
-            assert!(message.verify(signature).is_ok());
+            let timestamp = fields
+                .as_object()
+                .unwrap()
+                .get("time")
+                .map_or(None, |timestamp| {
+                    DateTime::<Utc>::from_str(timestamp.as_str().unwrap()).ok()
+                });
+            assert!(message
+                .verify(signature, None, None, timestamp.as_ref())
+                .is_ok());
             println!("✅")
         }
     }
 
     #[test]
-    fn validation_negative() {
-        let tests: serde_json::Value = serde_json::from_str(VALIDATION_NEGATIVE).unwrap();
+    fn verification_negative() {
+        let tests: serde_json::Value = serde_json::from_str(VERIFICATION_NEGATIVE).unwrap();
         for (test_name, test) in tests.as_object().unwrap() {
             print!("{} -> ", test_name);
             let fields = &test;
@@ -519,12 +635,78 @@ Resources:
                     .strip_prefix("0x")
                     .unwrap(),
             );
+            let domain_binding = fields
+                .as_object()
+                .unwrap()
+                .get("domainBinding")
+                .map_or(None, |domain_binding| {
+                    Authority::from_str(domain_binding.as_str().unwrap()).ok()
+                });
+            let match_nonce = fields
+                .as_object()
+                .unwrap()
+                .get("matchNonce")
+                .map_or(None, |match_nonce| match_nonce.as_str());
+            let timestamp = fields
+                .as_object()
+                .unwrap()
+                .get("time")
+                .map_or(None, |timestamp| {
+                    DateTime::<Utc>::from_str(timestamp.as_str().unwrap()).ok()
+                });
             assert!(
                 message.is_err()
                     || signature.is_err()
-                    || message.unwrap().verify(signature.unwrap()).is_err()
+                    || message
+                        .unwrap()
+                        .verify(
+                            signature.unwrap(),
+                            domain_binding.as_ref(),
+                            match_nonce,
+                            timestamp.as_ref(),
+                        )
+                        .is_err()
             );
             println!("✅")
+        }
+    }
+
+    const VALID_CASES: &'static [&'static str] = &[
+        // From the spec:
+        // All caps
+        "0x52908400098527886E0F7030069857D2E4169EE7",
+        "0x8617E340B3D01FA5F11F306F4090FD50E238070D",
+        // All Lower
+        "0xde709f2102306220921060314715629080e2fb77",
+        "0x27b1fdb04752bbc536007a920d24acb045561c26",
+        "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+        "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+        "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+        "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+    ];
+
+    const INVALID_CASES: &'static [&'static str] = &[
+        // From eip55 Crate:
+        "0xD1220a0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+        "0xdbF03B407c01e7cD3CBea99509d93f8DDDC8C6FB",
+        "0xfb6916095ca1df60bB79Ce92cE3Ea74c37c5D359",
+        "0x5aAeb6053f3E94C9b9A09f33669435E7Ef1BeAed",
+        // FROM SO QUESTION:
+        "0xCF5609B003B2776699EEA1233F7C82D5695CC9AA",
+        // From eip55 Crate Issue
+        "0x000000000000000000000000000000000000dEAD",
+    ];
+
+    #[test]
+    fn test_is_checksum() {
+        for case in VALID_CASES {
+            let c = case.trim_start_matches("0x");
+            assert_eq!(is_checksum(&c), true)
+        }
+
+        for case in INVALID_CASES {
+            let c = case.trim_start_matches("0x");
+            assert_eq!(is_checksum(&c), false)
         }
     }
 
@@ -584,6 +766,9 @@ Resources:
     }
 
     fn test_eip55(addr: &str, checksum: &str) -> bool {
-        eip55(&<[u8; 20]>::from_hex(addr.strip_prefix("0x").unwrap()).unwrap()) == checksum
+        let unprefixed = addr.strip_prefix("0x").unwrap();
+        eip55(&<[u8; 20]>::from_hex(unprefixed).unwrap()) == checksum
+            && eip55(&<[u8; 20]>::from_hex(unprefixed.to_lowercase()).unwrap()) == checksum
+            && eip55(&<[u8; 20]>::from_hex(unprefixed.to_uppercase()).unwrap()) == checksum
     }
 }
