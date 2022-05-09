@@ -406,6 +406,7 @@ const RES_TAG: &str = "Resources:";
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::convert::TryInto;
 
     #[test]
     fn parsing() {
