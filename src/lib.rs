@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use core::{
     convert::Infallible,
     fmt::{self, Display, Formatter},
@@ -8,6 +7,7 @@ use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use thiserror::Error;
+use time::OffsetDateTime;
 
 pub mod nonce;
 pub mod rfc3339;
@@ -92,7 +92,7 @@ pub enum ParseError {
     #[error("Invalid URI: {0}")]
     Uri(#[from] iri_string::validate::Error),
     #[error("Invalid Timestamp: {0}")]
-    TimeStamp(#[from] chrono::format::ParseError),
+    TimeStamp(#[from] time::Error),
     #[error("Invalid Nonce: {0}")]
     Nonce(&'static str),
     #[error(transparent)]
@@ -298,7 +298,7 @@ impl Message {
         sig: [u8; 65],
         domain: Option<&Authority>,
         nonce: Option<&str>,
-        timestamp: Option<&DateTime<Utc>>,
+        timestamp: Option<&OffsetDateTime>,
     ) -> Result<Vec<u8>, VerificationError> {
         match (
             timestamp
@@ -323,10 +323,10 @@ impl Message {
     /// if message.valid_now() { ... };
     ///
     /// // equivalent to
-    /// if message.valid_at(&Utc::now()) { ... };
+    /// if message.valid_at(&OffsetDateTime::now_utc()) { ... };
     /// ```
     pub fn valid_now(&self) -> bool {
-        self.valid_at(&Utc::now())
+        self.valid_at(&OffsetDateTime::now_utc())
     }
 
     /// Validates the time constraints of the message at a specific point in time.
@@ -339,9 +339,9 @@ impl Message {
     /// if message.valid_now() { ... };
     ///
     /// // equivalent to
-    /// if message.valid_at(&Utc::now()) { ... };
+    /// if message.valid_at(&OffsetDateTime::now_utc()) { ... };
     /// ```
-    pub fn valid_at(&self, t: &DateTime<Utc>) -> bool {
+    pub fn valid_at(&self, t: &OffsetDateTime) -> bool {
         self.not_before.as_ref().map(|nbf| nbf < t).unwrap_or(true)
             && self
                 .expiration_time
@@ -405,6 +405,8 @@ const RES_TAG: &str = "Resources:";
 
 #[cfg(test)]
 mod tests {
+    use time::format_description::well_known::Rfc3339;
+
     use super::*;
     use std::convert::TryInto;
 
@@ -612,7 +614,7 @@ Resources:
                 .unwrap()
                 .get("time")
                 .map_or(None, |timestamp| {
-                    DateTime::<Utc>::from_str(timestamp.as_str().unwrap()).ok()
+                    OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).ok()
                 });
             assert!(message
                 .verify(signature, None, None, timestamp.as_ref())
@@ -652,7 +654,7 @@ Resources:
                 .unwrap()
                 .get("time")
                 .map_or(None, |timestamp| {
-                    DateTime::<Utc>::from_str(timestamp.as_str().unwrap()).ok()
+                    OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).ok()
                 });
             assert!(
                 message.is_err()
