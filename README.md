@@ -7,7 +7,7 @@ This crate provides a pure Rust implementation of EIP-4361: Sign In With Ethereu
 SIWE can be easily installed in any Rust project by including it in said project's `cargo.toml` file:
 
 ``` toml
-siwe = "0.3"
+siwe = "0.4"
 ```
 
 ## Usage
@@ -36,7 +36,7 @@ The time constraints (expiry and not-before) can also be validated, at current o
 if message.valid_now() { ... };
 
 // equivalent to
-if message.valid_at(&Utc::now()) { ... };
+if message.valid_at(&OffsetDateTime::now_utc()) { ... };
 ```
 
 Combined verification of time constraints and authentication can be done in a single call with `verify`:

@@ -1,26 +1,21 @@
-use chrono::{format::ParseError, offset::TimeZone, DateTime, FixedOffset, SecondsFormat};
 use core::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct TimeStamp(String, DateTime<FixedOffset>);
+pub struct TimeStamp(String, OffsetDateTime);
 
-impl<T> From<DateTime<T>> for TimeStamp
-where
-    T: TimeZone,
-    T::Offset: Display,
-    DateTime<T>: Into<DateTime<FixedOffset>>,
-{
-    fn from(t: DateTime<T>) -> Self {
-        Self(t.to_rfc3339_opts(SecondsFormat::Millis, true), t.into())
+impl From<OffsetDateTime> for TimeStamp {
+    fn from(t: OffsetDateTime) -> Self {
+        Self(t.format(&Rfc3339).expect("Rfc3339 formatting works"), t)
     }
 }
 
-impl AsRef<DateTime<FixedOffset>> for TimeStamp {
-    fn as_ref(&self) -> &DateTime<FixedOffset> {
+impl AsRef<OffsetDateTime> for TimeStamp {
+    fn as_ref(&self) -> &OffsetDateTime {
         &self.1
     }
 }
@@ -32,30 +27,21 @@ impl Display for TimeStamp {
 }
 
 impl FromStr for TimeStamp {
-    type Err = ParseError;
+    type Err = time::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(
-            s.into(),
-            DateTime::<FixedOffset>::parse_from_rfc3339(s)?,
-        ))
+        Ok(Self(s.into(), OffsetDateTime::parse(s, &Rfc3339)?))
     }
 }
 
-impl<T> PartialEq<DateTime<T>> for TimeStamp
-where
-    T: TimeZone,
-{
-    fn eq(&self, other: &DateTime<T>) -> bool {
+impl PartialEq<OffsetDateTime> for TimeStamp {
+    fn eq(&self, other: &OffsetDateTime) -> bool {
         &self.1 == other
     }
 }
 
-impl<T> PartialOrd<DateTime<T>> for TimeStamp
-where
-    T: TimeZone,
-{
-    fn partial_cmp(&self, other: &DateTime<T>) -> Option<Ordering> {
+impl PartialOrd<OffsetDateTime> for TimeStamp {
+    fn partial_cmp(&self, other: &OffsetDateTime) -> Option<Ordering> {
         self.1.partial_cmp(other)
     }
 }
