@@ -261,7 +261,7 @@ impl Message {
         };
         use sha3::{Digest, Keccak256};
         let pk = Signature::new(&Sig::from_bytes(&sig[..64])?, Id::new(&sig[64] % 27)?)?
-            .recover_verify_key(&self.eip191_string()?)?;
+            .recover_verifying_key(&self.eip191_string()?)?;
 
         if Keccak256::default()
             .chain(&pk.to_encoded_point(false).as_bytes()[1..])
