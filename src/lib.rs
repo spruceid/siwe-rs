@@ -229,7 +229,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
     type Value = Message;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("an integer between -2^31 and 2^31")
+        formatter.write_str("An EIP-4163 message")
     }
 
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
