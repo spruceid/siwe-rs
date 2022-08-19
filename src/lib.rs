@@ -6,6 +6,8 @@ use core::{
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
+use serde::de::Visitor;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use time::OffsetDateTime;
 
@@ -209,6 +211,45 @@ impl FromStr for Message {
             request_id,
             resources,
         })
+    }
+}
+
+impl Serialize for Message {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+struct MessageVisitor;
+
+impl<'de> Visitor<'de> for MessageVisitor {
+    type Value = Message;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an integer between -2^31 and 2^31")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let message = match Message::from_str(value) {
+            Ok(message) => Ok(message),
+            Err(_error) => Err(E::custom("Error parsing message")),
+        };
+        message
+    }
+}
+
+impl<'de> Deserialize<'de> for Message {
+    fn deserialize<D>(deserializer: D) -> Result<Message, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(MessageVisitor)
     }
 }
 
