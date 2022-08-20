@@ -1,18 +1,520 @@
+//! # Sign-In with Ethereum
+//!
+//! A library for building and verifying [EIP-4361] authentication messages.
+//!
+//! [EIP-4361]: https://eips.ethereum.org/EIPS/eip-4361
+//!
+//! ## Examples
+//!
+//! ### Generating a Message
+//!
+//! ```rust
+//! # use time::OffsetDateTime;
+//! use siwe::SignInWithEthereum;
+//! # use siwe::nonce::generate_nonce as _; // Make sure the fake import works.
+//! # /*
+//! use siwe::nonce::generate_nonce;
+//! # */
+//! # fn generate_nonce() -> &'static str { "lU0FgHkI6hO" }
+//!
+//! # fn run() -> anyhow::Result<siwe::Message> {
+//! # Ok(
+//! // `SignInWithEthereum` is the main entry point for both building and validation.
+//! SignInWithEthereum::default()
+//!
+//!     // Common options for both building and validating messages:
+//!     .uri("https://example.com:4337/sign-in")?
+//!     .statement("Hello, World")
+//!     .chain_id(1337)
+//!
+//!     // Indicate that we want to build a message (not validate one.)
+//!     .builder()?
+//!
+//!     // Specific options for generating a message:
+//! #   .issued_at(OffsetDateTime::UNIX_EPOCH)
+//!     .nonce(generate_nonce())
+//!     .address([0u8; 20])
+//!     .add_resource("https://example.com/u/1234")?
+//!     .build()?
+//! # )
+//! # }
+//!
+//!
+//! /*
+//! Which would generate a message like:
+//!
+//! # */
+//! # assert_eq!(run().unwrap().to_string(), r#"
+//! example.com:4337 wants you to sign in with your Ethereum account:
+//! 0x0000000000000000000000000000000000000000
+//!
+//! Hello, World
+//!
+//! URI: https://example.com:4337/sign-in
+//! Version: 1
+//! Chain ID: 1337
+//! Nonce: lU0FgHkI6hO
+//! Issued At: 1970-01-01T00:00:00Z
+//! Resources:
+//! - https://example.com/u/1234
+//! # "#.trim());
+//! # /*
+//!
+//! */
+//! ```
+//!
+//! ### Verifying a Message
+//!
+//! ```rust
+//! use hex_literal::hex;
+//!
+//! use siwe::{SignInWithEthereum, Verify};
+//!
+//! use time::OffsetDateTime;
+//!
+//! # fn check_for_nonce_reuse(nonce: &str) -> anyhow::Result<String> { Ok(nonce.into()) }
+//!
+//! const MESSAGE: &str = r#"localhost wants you to sign in with your Ethereum account:
+//! 0x4b60ffAf6fD681AbcC270Faf4472011A4A14724C
+//!
+//! Allow localhost to access your orbit using their temporary session key: did:key:z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg#z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg
+//!
+//! URI: did:key:z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg#z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg
+//! Version: 1
+//! Chain ID: 1
+//! Nonce: PPrtjztx2lYqWbqNs
+//! Issued At: 2021-12-20T12:29:25.907Z
+//! Expiration Time: 2021-12-20T12:44:25.906Z
+//! Resources:
+//! - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#put
+//! - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#del
+//! - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#get
+//! - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#list"#;
+//!
+//! const SIGNATURE: [u8; 65] = hex!("20c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c");
+//!
+//! # fn run() -> anyhow::Result<siwe::Message> {
+//! # Ok({
+//! // `SignInWithEthereum` is the main entry point for both building and validation.
+//! let verifier = SignInWithEthereum::default()
+//!
+//!     // Common options for both building and validating messages:
+//!     .domain("localhost")?
+//!     .uri("did:key:z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg#z6Mktud6LcDFb3heS7FFWoJhiCafmUPkCAgpvJLv5E6fgBJg")?
+//!     .chain_id(1)
+//!
+//!     // Indicate that we want to verify a message (not build one.)
+//!     .verifier(MESSAGE)?
+//!
+//!     // Optionally pick a custom time, or leave it as the current time.
+//!     .valid_at(OffsetDateTime::from_unix_timestamp(1640003425)?)
+//!
+//!     // Customize which fields to verify (or leave the defaults.)
+//!     .statement(Verify::Never);
+//!
+//! // It is important to check that this message's nonce has never been used.
+//! let nonce = check_for_nonce_reuse(verifier.nonce())?;
+//!
+//! verifier
+//!     .verify(&nonce, &SIGNATURE)?
+//! # })
+//! # }
+//! # run().unwrap();
+//! ```
 use core::{
     convert::Infallible,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
 use hex::FromHex;
-use http::uri::{Authority, InvalidUri};
+use http::{
+    uri::{Authority, InvalidUri},
+    Uri,
+};
 use iri_string::types::UriString;
+use std::convert::TryFrom;
 use thiserror::Error;
+use time::Duration;
 use time::OffsetDateTime;
 
 pub mod nonce;
 pub mod rfc3339;
 
 pub use rfc3339::TimeStamp;
+
+#[derive(Debug, Clone, Copy)]
+enum Time {
+    Offset(Duration),
+    Exact(OffsetDateTime),
+}
+
+impl Time {
+    fn resolve(self) -> Option<OffsetDateTime> {
+        match self {
+            Self::Offset(d) => OffsetDateTime::now_utc().checked_add(d),
+            Self::Exact(e) => Some(e),
+        }
+    }
+}
+
+impl Default for Time {
+    fn default() -> Self {
+        Self::Offset(Default::default())
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SignInWithEthereum {
+    domain: Option<Authority>,
+    statement: Option<String>,
+    uri: Option<UriString>,
+    chain_id: Option<u64>,
+}
+
+impl SignInWithEthereum {
+    pub fn uri<D>(mut self, uri: D) -> Result<Self, iri_string::validate::Error>
+    where
+        D: std::fmt::Display,
+    {
+        let text = format!("{}", uri);
+        let parsed: UriString = text.parse()?;
+        self.uri = Some(parsed);
+        Ok(self)
+    }
+
+    pub fn domain<D>(mut self, domain: D) -> Result<Self, http::uri::InvalidUri>
+    where
+        D: std::fmt::Display,
+    {
+        let text = format!("{}", domain);
+        let parsed = Authority::try_from(text)?;
+        self.domain = Some(parsed);
+        Ok(self)
+    }
+
+    pub fn chain_id(mut self, chain_id: u64) -> Self {
+        self.chain_id = Some(chain_id);
+        self
+    }
+
+    pub fn statement<S>(mut self, statement: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.statement = Some(statement.into());
+        self
+    }
+
+    fn pick_domain(&mut self) {
+        self.domain = match (self.domain.take(), &self.uri) {
+            (Some(d), _) => Some(d),
+            (None, Some(u)) => u
+                .as_str()
+                .parse::<Uri>()
+                .ok()
+                .as_ref()
+                .and_then(Uri::authority)
+                .cloned(),
+            (None, None) => None,
+        };
+    }
+
+    pub fn builder(mut self) -> Result<Builder, BuildError> {
+        self.pick_domain();
+
+        let uri = BuildError::require("uri", self.uri)?.to_string();
+
+        Ok(Builder {
+            domain: BuildError::require("domain", self.domain)?,
+            statement: self.statement,
+            uri: UriString::try_from(uri).expect("`Uri` must be a valid `UriString`"),
+            chain_id: BuildError::require("chain_id", self.chain_id)?,
+
+            nonce: Default::default(),
+            address: Default::default(),
+            issued_at: Default::default(),
+            expiration_time: Default::default(),
+            not_before: Default::default(),
+            request_id: Default::default(),
+            resources: Default::default(),
+        })
+    }
+
+    pub fn verifier<S>(mut self, message: S) -> Result<Verifier, VerifyError>
+    where
+        S: AsRef<str>,
+    {
+        self.pick_domain();
+
+        let message: Message = message.as_ref().parse()?;
+
+        let uri = VerifyError::require("uri", self.uri)?.to_string();
+
+        Ok(Verifier {
+            message,
+            valid_at: Default::default(),
+
+            domain: VerifyError::require("domain", self.domain)?,
+
+            statement: self.statement,
+            statement_mode: Verify::Always,
+
+            expiration_time_mode: Verify::WhenPresent,
+
+            not_before_mode: Verify::WhenPresent,
+
+            uri: UriString::try_from(uri).expect("`Uri` must be a valid `UriString`"),
+            chain_id: VerifyError::require("chain_id", self.chain_id)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Verify {
+    Always,
+    WhenPresent,
+    Never,
+}
+
+impl Verify {
+    fn verify<Expect, Actual, Cmp>(
+        self,
+        expect: Option<Expect>,
+        actual: Option<Actual>,
+        cmp: Cmp,
+    ) -> bool
+    where
+        Cmp: FnOnce(Expect, Actual) -> bool,
+    {
+        match (self, expect, actual) {
+            (Self::Never, _, _) => true,
+
+            (Self::Always, None, None) => true,
+            (Self::Always, Some(expect), Some(actual)) => cmp(expect, actual),
+            (Self::Always, _, _) => false,
+
+            (Self::WhenPresent, _, None) => true,
+            (Self::WhenPresent, None, Some(_)) => false,
+            (Self::WhenPresent, Some(expect), Some(actual)) => cmp(expect, actual),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct Verifier {
+    message: Message,
+    valid_at: Time,
+
+    statement: Option<String>,
+    statement_mode: Verify,
+
+    expiration_time_mode: Verify,
+
+    not_before_mode: Verify,
+
+    domain: Authority,
+    uri: UriString,
+    chain_id: u64,
+}
+
+impl Verifier {
+    pub fn nonce(&self) -> &str {
+        &self.message.nonce
+    }
+
+    /// Specify the time to use when validating the message. Defaults to the current time.
+    pub fn valid_at(mut self, now: OffsetDateTime) -> Self {
+        self.valid_at = Time::Exact(now);
+        self
+    }
+
+    /// Choose when to verify the statement. Defaults to [`Verify::Always`].
+    pub fn statement(mut self, verify: Verify) -> Self {
+        self.statement_mode = verify;
+        self
+    }
+
+    /// Choose when to verify the expiration time. Defaults to [`Verify::WhenPresent`].
+    pub fn expiration_time(mut self, verify: Verify) -> Self {
+        self.expiration_time_mode = verify;
+        self
+    }
+
+    /// Choose when to verify the not before time. Defaults to [`Verify::WhenPresent`].
+    pub fn not_before(mut self, verify: Verify) -> Self {
+        self.not_before_mode = verify;
+        self
+    }
+
+    pub fn verify(self, nonce: &str, signature: &[u8; 65]) -> Result<Message, VerificationError> {
+        self.message.verify_eip191(&signature)?;
+
+        let valid_at = self.valid_at.resolve().expect("`valid_at` out of range");
+
+        if self.domain != self.message.domain {
+            return Err(VerificationError::DomainMismatch);
+        }
+
+        if self.uri != self.message.uri {
+            return Err(VerificationError::UriMismatch);
+        }
+
+        if self.chain_id != self.message.chain_id {
+            return Err(VerificationError::ChainIdMismatch);
+        }
+
+        if nonce != self.message.nonce {
+            return Err(VerificationError::NonceMismatch);
+        }
+
+        // Have to verify the statement because it could contain, for example, Terms of Service.
+        let cmp_stmt = |expect, actual| expect == actual;
+        if !self
+            .statement_mode
+            .verify(self.statement, self.message.statement.clone(), cmp_stmt)
+        {
+            return Err(VerificationError::StatementMismatch);
+        }
+
+        let cmp_exp = |valid_at, expires_at| expires_at >= valid_at;
+        if !self.expiration_time_mode.verify(
+            Some(valid_at),
+            self.message.expiration_time.clone(),
+            cmp_exp,
+        ) {
+            return Err(VerificationError::Time);
+        }
+
+        let cmp_nbf = |valid_at, not_before| not_before < valid_at;
+        if !self
+            .not_before_mode
+            .verify(Some(valid_at), self.message.not_before.clone(), cmp_nbf)
+        {
+            return Err(VerificationError::Time);
+        }
+
+        Ok(self.message)
+    }
+}
+
+#[derive(Debug, Clone)]
+#[must_use]
+pub struct Builder {
+    domain: Authority,
+    statement: Option<String>,
+    uri: UriString,
+    chain_id: u64,
+
+    nonce: Option<String>,
+    address: Option<[u8; 20]>,
+    issued_at: Time,
+    expiration_time: Option<Time>,
+    not_before: Option<Time>,
+    request_id: Option<String>,
+    resources: Vec<UriString>,
+}
+
+impl Builder {
+    pub fn nonce<S>(mut self, nonce: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.nonce = Some(nonce.into());
+        self
+    }
+
+    pub fn address(mut self, address: [u8; 20]) -> Self {
+        self.address = Some(address);
+        self
+    }
+
+    pub fn issued_at(mut self, issued_at: OffsetDateTime) -> Self {
+        self.issued_at = Time::Exact(issued_at);
+        self
+    }
+
+    pub fn expiration_time(mut self, expiration_time: OffsetDateTime) -> Self {
+        self.expiration_time = Some(Time::Exact(expiration_time));
+        self
+    }
+
+    /// Set the length of time from `issued_at` that this signature will be valid for.
+    pub fn expiration_time_duration(mut self, duration: Duration) -> Self {
+        self.expiration_time = Some(Time::Offset(duration));
+        self
+    }
+
+    pub fn not_before(mut self, not_before: OffsetDateTime) -> Self {
+        self.not_before = Some(Time::Exact(not_before));
+        self
+    }
+
+    /// Set the length of time after `issued_at` where this signature will not be valid.
+    pub fn not_before_duration(mut self, duration: Duration) -> Self {
+        self.not_before = Some(Time::Offset(duration));
+        self
+    }
+
+    pub fn request_id<S>(mut self, request_id: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.request_id = Some(request_id.into());
+        self
+    }
+
+    pub fn add_resource<D>(mut self, resource: D) -> Result<Self, iri_string::validate::Error>
+    where
+        D: std::fmt::Display,
+    {
+        let text = format!("{}", resource);
+        let uri: UriString = text.parse()?;
+        self.resources.push(uri);
+        Ok(self)
+    }
+
+    pub fn extend_resources<I, D>(
+        mut self,
+        resources: I,
+    ) -> Result<Self, iri_string::validate::Error>
+    where
+        I: IntoIterator<Item = D>,
+        D: std::fmt::Display,
+    {
+        for item in resources {
+            self = self.add_resource(item)?;
+        }
+        Ok(self)
+    }
+
+    pub fn build(self) -> Result<Message, BuildError> {
+        let issued_at = self.issued_at.resolve().expect("`issued_at` out of range");
+
+        let expiration_time = self
+            .expiration_time
+            .map(|t| t.resolve().expect("`expiration_time` out of range"));
+
+        let not_before = self
+            .not_before
+            .map(|t| t.resolve().expect("`not_before` out of range"));
+
+        Ok(Message {
+            domain: self.domain,
+            address: BuildError::require("address", self.address)?,
+            statement: self.statement,
+            uri: self.uri,
+            version: Version::V1,
+            chain_id: self.chain_id,
+            nonce: BuildError::require("nonce", self.nonce)?,
+            issued_at: issued_at.into(),
+            expiration_time: expiration_time.map(Into::into),
+            not_before: not_before.map(Into::into),
+            request_id: self.request_id,
+            resources: self.resources,
+        })
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Version {
@@ -213,6 +715,35 @@ impl FromStr for Message {
 }
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum VerifyError {
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+    #[error("A required field was not provided: {0}")]
+    MissingField(String),
+}
+
+impl VerifyError {
+    fn require<S: Into<String>, V>(field: S, value: Option<V>) -> Result<V, Self> {
+        value.ok_or_else(|| Self::MissingField(field.into()))
+    }
+}
+
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum BuildError {
+    #[error("A required field was not provided: {0}")]
+    MissingField(String),
+}
+
+impl BuildError {
+    fn require<S: Into<String>, V>(field: S, value: Option<V>) -> Result<V, Self> {
+        value.ok_or_else(|| Self::MissingField(field.into()))
+    }
+}
+
+#[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum VerificationError {
     #[error(transparent)]
     Crypto(#[from] k256::ecdsa::Error),
@@ -226,6 +757,12 @@ pub enum VerificationError {
     DomainMismatch,
     #[error("Message nonce does not match")]
     NonceMismatch,
+    #[error("Message uri does not match")]
+    UriMismatch,
+    #[error("Message chain id does not match")]
+    ChainIdMismatch,
+    #[error("Message statement does not match")]
+    StatementMismatch,
 }
 
 /// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
