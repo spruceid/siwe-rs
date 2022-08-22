@@ -6,7 +6,7 @@ use core::{
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
-use serde::de::Visitor;
+#[cfg(feature = "serde")]
 use serde::{de::{self, Visitor}, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -223,8 +223,10 @@ impl Serialize for Message {
     }
 }
 
+#[cfg(feature = "serde")]
 struct MessageVisitor;
 
+#[cfg(feature = "serde")]
 impl<'de> Visitor<'de> for MessageVisitor {
     type Value = Message;
 
@@ -244,6 +246,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Message {
     fn deserialize<D>(deserializer: D) -> Result<Message, D::Error>
     where
