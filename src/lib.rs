@@ -229,7 +229,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
     type Value = Message;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("An EIP-4163 message")
+        formatter.write_str("An EIP-4361 message")
     }
 
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
