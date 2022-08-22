@@ -6,8 +6,8 @@ use core::{
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
-use serde::de::Visitor;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "serde")]
+use serde::{de::{self, Visitor}, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use time::OffsetDateTime;
 
@@ -214,6 +214,7 @@ impl FromStr for Message {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for Message {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -223,13 +224,15 @@ impl Serialize for Message {
     }
 }
 
+#[cfg(feature = "serde")]
 struct MessageVisitor;
 
+#[cfg(feature = "serde")]
 impl<'de> Visitor<'de> for MessageVisitor {
     type Value = Message;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("An EIP-4163 message")
+        formatter.write_str("an EIP-4361 formatted message")
     }
 
     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -238,12 +241,13 @@ impl<'de> Visitor<'de> for MessageVisitor {
     {
         let message = match Message::from_str(value) {
             Ok(message) => Ok(message),
-            Err(_error) => Err(E::custom("Error parsing message")),
+            Err(error) => Err(E::custom(format!("error parsing message: {error}"))),
         };
         message
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Message {
     fn deserialize<D>(deserializer: D) -> Result<Message, D::Error>
     where
