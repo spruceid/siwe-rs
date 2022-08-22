@@ -7,7 +7,7 @@ use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 use serde::de::Visitor;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::{self, Visitor}, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 use time::OffsetDateTime;
 
