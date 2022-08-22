@@ -238,7 +238,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
     {
         let message = match Message::from_str(value) {
             Ok(message) => Ok(message),
-            Err(_error) => Err(E::custom("Error parsing message")),
+            Err(error) => Err(E::custom(format!("error parsing message: {error}"))),
         };
         message
     }
