@@ -5,7 +5,7 @@ use core::{
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimeStamp(String, OffsetDateTime);
 
 impl From<OffsetDateTime> for TimeStamp {
