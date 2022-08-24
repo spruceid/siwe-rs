@@ -16,7 +16,7 @@ pub mod rfc3339;
 
 pub use rfc3339::TimeStamp;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Version {
     V1 = 1,
 }
@@ -32,7 +32,7 @@ impl FromStr for Version {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub domain: Authority,
     pub address: [u8; 20],
