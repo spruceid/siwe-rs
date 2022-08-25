@@ -7,7 +7,10 @@ use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
 #[cfg(feature = "serde")]
-use serde::{de::{self, Visitor}, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use thiserror::Error;
 use time::OffsetDateTime;
 
