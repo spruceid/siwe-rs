@@ -309,7 +309,7 @@ impl Message {
         };
         use sha3::{Digest, Keccak256};
         let pk = Signature::new(&Sig::from_bytes(&sig[..64])?, Id::new(&sig[64] % 27)?)?
-            .recover_verifying_key(&self.eip191_string()?)?;
+            .recover_verifying_key(&self.eip191_bytes()?)?;
 
         if Keccak256::default()
             .chain(&pk.to_encoded_point(false).as_bytes()[1..])
@@ -402,9 +402,23 @@ impl Message {
     ///
     /// # Example
     /// ```ignore
-    /// let eip191_string: String = message.eip191_string()?;
+    /// let eip191_bytes: Vec<u8> = message.eip191_string()?;
     /// ```
+    #[deprecated(
+        since = "0.4.2",
+        note = "eip191_string was renamed. Users should instead use eip191_bytes"
+    )]
     pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {
+        self.eip191_bytes()
+    }
+
+    /// Produces EIP-191 Personal-Signature pre-hash signing input
+    ///
+    /// # Example
+    /// ```ignore
+    /// let eip191_bytes: Vec<u8> = message.eip191_bytes()?;
+    /// ```
+    pub fn eip191_bytes(&self) -> Result<Vec<u8>, fmt::Error> {
         let s = self.to_string();
         Ok(format!("\x19Ethereum Signed Message:\n{}{}", s.as_bytes().len(), s).into())
     }
@@ -418,7 +432,7 @@ impl Message {
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
         use sha3::{Digest, Keccak256};
         Ok(Keccak256::default()
-            .chain(&self.eip191_string()?)
+            .chain(&self.eip191_bytes()?)
             .finalize()
             .into())
     }
