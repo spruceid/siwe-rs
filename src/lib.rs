@@ -312,7 +312,7 @@ impl Message {
             .recover_verifying_key(&self.eip191_bytes()?)?;
 
         if Keccak256::default()
-            .chain(&pk.to_encoded_point(false).as_bytes()[1..])
+            .chain_update(&pk.to_encoded_point(false).as_bytes()[1..])
             .finalize()[12..]
             != self.address
         {
@@ -432,7 +432,7 @@ impl Message {
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
         use sha3::{Digest, Keccak256};
         Ok(Keccak256::default()
-            .chain(&self.eip191_bytes()?)
+            .chain_update(&self.eip191_bytes()?)
             .finalize()
             .into())
     }
