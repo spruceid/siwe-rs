@@ -265,6 +265,7 @@ impl<'de> Deserialize<'de> for Message {
 }
 
 #[cfg_attr(feature = "typed-builder", derive(typed_builder::TypedBuilder))]
+#[derive(Default)]
 /// Verification options and configuration
 pub struct VerificationOpts {
     /// RFC 4501 dns authority that is requesting the signing (Optional)
@@ -275,20 +276,7 @@ pub struct VerificationOpts {
     pub timestamp: Option<OffsetDateTime>,
     #[cfg(feature = "ethers")]
     /// RPC Provider use for on-chain checks. Necessary for contract wallets signatures.
-    pub rpc_provider: Provider<Http>,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for VerificationOpts {
-    fn default() -> Self {
-        Self {
-            domain: None,
-            nonce: None,
-            timestamp: None,
-            #[cfg(feature = "ethers")]
-            rpc_provider: "https://cloudflare-eth.com".try_into().unwrap(),
-        }
-    }
+    pub rpc_provider: Option<Provider<Http>>,
 }
 
 #[derive(Error, Debug)]
@@ -308,8 +296,7 @@ pub enum VerificationError {
     #[cfg(feature = "ethers")]
     #[error("{0}")]
     ContractCall(String),
-    #[cfg(not(feature = "ethers"))]
-    #[error("The signature is not 65 bytes long. It might mean that it is a EIP1271 signature and you have the `ethers` feature disabled.")]
+    #[error("The signature is not 65 bytes long. It might mean that it is a EIP1271 signature and you have the `ethers` feature disabled or configured a provider.")]
     SignatureLength,
 }
 
@@ -419,18 +406,15 @@ impl Message {
         let res = if sig.len() == 65 {
             self.verify_eip191(sig.try_into().unwrap())
         } else {
-            #[cfg(not(feature = "ethers"))]
-            {
-                Err(VerificationError::SignatureLength)
-            }
-            #[cfg(feature = "ethers")]
-            Err(VerificationError::Signer)
+            Err(VerificationError::SignatureLength)
         };
 
         #[cfg(feature = "ethers")]
         if let Err(e) = res {
-            if self.verify_eip1271(sig, &opts.rpc_provider).await? {
-                return Ok(());
+            if let Some(provider) = &opts.rpc_provider {
+                if self.verify_eip1271(sig, provider).await? {
+                    return Ok(());
+                }
             }
             return Err(e);
         }
@@ -763,10 +747,11 @@ Resources:
                     .unwrap(),
             )
             .unwrap();
-            assert!(message
-                .verify(&signature, &VerificationOpts::default())
-                .await
-                .is_ok());
+            let opts = VerificationOpts {
+                rpc_provider: Some("https://cloudflare-eth.com".try_into().unwrap()),
+                ..Default::default()
+            };
+            assert!(message.verify(&signature, &opts).await.is_ok());
             println!("✅")
         }
     }
