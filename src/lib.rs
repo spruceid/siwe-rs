@@ -3,6 +3,8 @@ use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
+#[cfg(feature = "ethers")]
+use ethers::prelude::*;
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
@@ -11,6 +13,7 @@ use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
+use std::convert::TryInto;
 use thiserror::Error;
 use time::OffsetDateTime;
 
@@ -261,6 +264,33 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
+#[cfg_attr(feature = "typed-builder", derive(typed_builder::TypedBuilder))]
+/// Verification options and configuration
+pub struct VerificationOpts {
+    /// RFC 4501 dns authority that is requesting the signing (Optional)
+    pub domain: Option<Authority>,
+    /// Randomized token used to prevent replay attacks, at least 8 alphanumeric characters (Optional)
+    pub nonce: Option<String>,
+    /// ISO 8601 datetime string of the current time (Optional)
+    pub timestamp: Option<OffsetDateTime>,
+    #[cfg(feature = "ethers")]
+    /// RPC Provider use for on-chain checks. Necessary for contract wallets signatures.
+    pub rpc_provider: Provider<Http>,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for VerificationOpts {
+    fn default() -> Self {
+        Self {
+            domain: None,
+            nonce: None,
+            timestamp: None,
+            #[cfg(feature = "ethers")]
+            rpc_provider: "https://cloudflare-eth.com".try_into().unwrap(),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum VerificationError {
     #[error(transparent)]
@@ -275,10 +305,12 @@ pub enum VerificationError {
     DomainMismatch,
     #[error("Message nonce does not match")]
     NonceMismatch,
-    #[error("{0}")]
-    Provider(String),
+    #[cfg(feature = "ethers")]
     #[error("{0}")]
     ContractCall(String),
+    #[cfg(not(feature = "ethers"))]
+    #[error("The signature is not 65 bytes long. It might mean that it is a EIP1271 signature and you have the `ethers` feature disabled.")]
+    SignatureLength,
 }
 
 /// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
@@ -294,7 +326,7 @@ pub fn is_checksum(address: &str) -> bool {
 }
 
 impl Message {
-    /// Validates the integrity of the object by matching it's signature.
+    /// Verify the integrity of the message by matching its signature.
     ///
     /// # Arguments
     /// - `sig` - Signature of the message signed by the wallet
@@ -303,7 +335,7 @@ impl Message {
     /// ```ignore
     /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
     /// ```
-    pub async fn verify_eip191(&self, sig: &[u8]) -> Result<(), VerificationError> {
+    pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         use k256::{
             ecdsa::{
                 recoverable::{Id, Signature},
@@ -321,30 +353,38 @@ impl Message {
             .finalize()[12..]
             != self.address
         {
-            #[cfg(feature = "ethers")]
-            if self.verify_eip1271(sig).await? {
-                return Ok(());
-            }
             Err(VerificationError::Signer)
         } else {
-            Ok(())
+            Ok(pk.to_bytes().into_iter().collect())
         }
     }
 
     #[cfg(feature = "ethers")]
-    pub async fn verify_eip1271(&self, sig: &[u8]) -> Result<bool, VerificationError> {
+    /// Verify the integrity of a, potentially, EIP-1271 signed message.
+    ///
+    /// # Arguments
+    /// - `sig` - Signature of the message signed by the wallet.
+    /// - `provider` - Provider used to query the chain.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let is_valid: bool = message.verify_eip1271(&signature, "https://cloudflare-eth.com".try_into().unwrap())?;
+    /// ```
+    pub async fn verify_eip1271(
+        &self,
+        sig: &[u8],
+        provider: &Provider<Http>,
+    ) -> Result<bool, VerificationError> {
         use sha3::{Digest, Keccak256};
         let hash = Keccak256::new_with_prefix(self.eip191_bytes().unwrap()).finalize();
-        eip1271::verify_eip1271(self.address, hash.as_ref(), sig).await
+        eip1271::verify_eip1271(self.address, hash.as_ref(), sig, provider).await
     }
 
     /// Validates time constraints and integrity of the object by matching it's signature.
     ///
     /// # Arguments
     /// - `sig` - Signature of the message signed by the wallet
-    /// - `domain` - RFC 4501 dns authority that is requesting the signing (Optional)
-    /// - `nonce` - Randomized token used to prevent replay attacks, at least 8 alphanumeric characters (Optional)
-    /// - `timestamp` - ISO 8601 datetime string of the current time (Optional)
+    /// - `opts` - Verification options and configuration
     ///
     /// # Example
     /// ```ignore
@@ -360,24 +400,41 @@ impl Message {
     pub async fn verify(
         &self,
         sig: &[u8],
-        domain: Option<&Authority>,
-        nonce: Option<&str>,
-        timestamp: Option<&OffsetDateTime>,
+        opts: &VerificationOpts,
     ) -> Result<(), VerificationError> {
         match (
-            timestamp
+            opts.timestamp
+                .as_ref()
                 .map(|t| self.valid_at(t))
                 .unwrap_or_else(|| self.valid_now()),
-            domain,
-            nonce,
+            opts.domain.as_ref(),
+            opts.nonce.as_ref(),
         ) {
             (false, _, _) => return Err(VerificationError::Time),
             (_, Some(d), _) if *d != self.domain => return Err(VerificationError::DomainMismatch),
-            (_, _, Some(n)) if n != self.nonce => return Err(VerificationError::NonceMismatch),
+            (_, _, Some(n)) if *n != self.nonce => return Err(VerificationError::NonceMismatch),
             _ => (),
         };
 
-        self.verify_eip191(sig).await
+        let res = if sig.len() == 65 {
+            self.verify_eip191(sig.try_into().unwrap())
+        } else {
+            #[cfg(not(feature = "ethers"))]
+            {
+                Err(VerificationError::SignatureLength)
+            }
+            #[cfg(feature = "ethers")]
+            Err(VerificationError::Signer)
+        };
+
+        #[cfg(feature = "ethers")]
+        if let Err(e) = res {
+            if self.verify_eip1271(sig, &opts.rpc_provider).await? {
+                return Ok(());
+            }
+            return Err(e);
+        }
+        res.map(|_| ())
     }
 
     /// Validates the time constraints of the message at current time.
@@ -412,20 +469,6 @@ impl Message {
                 .as_ref()
                 .map(|exp| exp >= t)
                 .unwrap_or(true)
-    }
-
-    /// Produces EIP-191 Personal-Signature pre-hash signing input
-    ///
-    /// # Example
-    /// ```ignore
-    /// let eip191_bytes: Vec<u8> = message.eip191_string()?;
-    /// ```
-    #[deprecated(
-        since = "0.4.2",
-        note = "eip191_string was renamed. Users should instead use eip191_bytes"
-    )]
-    pub fn eip191_string(&self) -> Result<Vec<u8>, fmt::Error> {
-        self.eip191_bytes()
     }
 
     /// Produces EIP-191 Personal-Signature pre-hash signing input
@@ -562,9 +605,9 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(&correct).await.is_ok());
+        assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(&incorrect).await.is_err());
+        assert!(message.verify_eip191(&incorrect).is_err());
     }
 
     #[tokio::test]
@@ -586,9 +629,9 @@ Resources:
 - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#get
 - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#list"#).unwrap();
         let correct = <[u8; 65]>::from_hex(r#"20c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
-        assert!(message.verify_eip191(&correct).await.is_ok());
+        assert!(message.verify_eip191(&correct).is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"30c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
-        assert!(message.verify_eip191(&incorrect).await.is_err());
+        assert!(message.verify_eip191(&incorrect).is_err());
     }
 
     const PARSING_POSITIVE: &str = include_str!("../tests/siwe/test/parsing_positive.json");
@@ -696,10 +739,11 @@ Resources:
                 .and_then(|timestamp| {
                     OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).ok()
                 });
-            assert!(message
-                .verify(&signature, None, None, timestamp.as_ref())
-                .await
-                .is_ok());
+            let opts = VerificationOpts {
+                timestamp,
+                ..Default::default()
+            };
+            assert!(message.verify(&signature, &opts).await.is_ok());
             println!("✅")
         }
     }
@@ -719,7 +763,10 @@ Resources:
                     .unwrap(),
             )
             .unwrap();
-            assert!(message.verify(&signature, None, None, None).await.is_ok());
+            assert!(message
+                .verify(&signature, &VerificationOpts::default())
+                .await
+                .is_ok());
             println!("✅")
         }
     }
@@ -750,7 +797,8 @@ Resources:
                 .as_object()
                 .unwrap()
                 .get("matchNonce")
-                .and_then(|match_nonce| match_nonce.as_str());
+                .and_then(|match_nonce| match_nonce.as_str())
+                .map(|n| n.to_string());
             let timestamp = fields
                 .as_object()
                 .unwrap()
@@ -758,17 +806,19 @@ Resources:
                 .and_then(|timestamp| {
                     OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).ok()
                 });
+            #[allow(clippy::needless_update)]
+            let opts = VerificationOpts {
+                domain: domain_binding,
+                nonce: match_nonce,
+                timestamp,
+                ..Default::default()
+            };
             assert!(
                 message.is_err()
                     || signature.is_err()
                     || message
                         .unwrap()
-                        .verify(
-                            &signature.unwrap(),
-                            domain_binding.as_ref(),
-                            match_nonce,
-                            timestamp.as_ref(),
-                        )
+                        .verify(&signature.unwrap(), &opts,)
                         .await
                         .is_err()
             );

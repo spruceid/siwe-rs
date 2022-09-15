@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, convert::TryFrom};
+use std::collections::BTreeMap;
 
 use ethers::{
     abi::{Abi, Function, Param, ParamType, StateMutability},
@@ -14,6 +14,7 @@ pub async fn verify_eip1271(
     address: [u8; 20],
     message_hash: &[u8; 32],
     signature: &[u8],
+    provider: &Provider<Http>,
 ) -> Result<bool, VerificationError> {
     #[allow(deprecated)]
     let abi = Abi {
@@ -49,9 +50,7 @@ pub async fn verify_eip1271(
         fallback: false,
     };
 
-    let client = Provider::<Http>::try_from("https://cloudflare-eth.com")
-        .map_err(|e| VerificationError::Provider(e.to_string()))?;
-    let contract = Contract::new(address.into(), abi, client);
+    let contract = Contract::new(address.into(), abi, provider);
 
     match contract
         .method::<_, [u8; 4]>(
