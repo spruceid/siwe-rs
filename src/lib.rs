@@ -14,6 +14,8 @@ use serde::{
 use thiserror::Error;
 use time::OffsetDateTime;
 
+#[cfg(feature = "ethers")]
+mod eip1271;
 pub mod nonce;
 pub mod rfc3339;
 
@@ -242,11 +244,10 @@ impl<'de> Visitor<'de> for MessageVisitor {
     where
         E: de::Error,
     {
-        let message = match Message::from_str(value) {
+        match Message::from_str(value) {
             Ok(message) => Ok(message),
             Err(error) => Err(E::custom(format!("error parsing message: {}", error))),
-        };
-        message
+        }
     }
 }
 
@@ -274,6 +275,10 @@ pub enum VerificationError {
     DomainMismatch,
     #[error("Message nonce does not match")]
     NonceMismatch,
+    #[error("{0}")]
+    Provider(String),
+    #[error("{0}")]
+    ContractCall(String),
 }
 
 /// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
@@ -298,7 +303,7 @@ impl Message {
     /// ```ignore
     /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
     /// ```
-    pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
+    pub async fn verify_eip191(&self, sig: &[u8]) -> Result<(), VerificationError> {
         use k256::{
             ecdsa::{
                 recoverable::{Id, Signature},
@@ -316,10 +321,21 @@ impl Message {
             .finalize()[12..]
             != self.address
         {
+            #[cfg(feature = "ethers")]
+            if self.verify_eip1271(sig).await? {
+                return Ok(());
+            }
             Err(VerificationError::Signer)
         } else {
-            Ok(pk.to_bytes().into_iter().collect())
+            Ok(())
         }
+    }
+
+    #[cfg(feature = "ethers")]
+    pub async fn verify_eip1271(&self, sig: &[u8]) -> Result<bool, VerificationError> {
+        use sha3::{Digest, Keccak256};
+        let hash = Keccak256::new_with_prefix(self.eip191_bytes().unwrap()).finalize();
+        eip1271::verify_eip1271(self.address, hash.as_ref(), sig).await
     }
 
     /// Validates time constraints and integrity of the object by matching it's signature.
@@ -335,19 +351,19 @@ impl Message {
     /// let message: Message = str.parse()?;
     /// let signature: [u8; 65];
     ///
-    /// if let Err(e) = message.verify(&signature) {
+    /// if let Err(e) = message.verify(&signature).await {
     ///     // message cannot be correctly authenticated at this time
     /// }
     ///
     /// // do application-specific things
     /// ```
-    pub fn verify(
+    pub async fn verify(
         &self,
-        sig: [u8; 65],
+        sig: &[u8],
         domain: Option<&Authority>,
         nonce: Option<&str>,
         timestamp: Option<&OffsetDateTime>,
-    ) -> Result<Vec<u8>, VerificationError> {
+    ) -> Result<(), VerificationError> {
         match (
             timestamp
                 .map(|t| self.valid_at(t))
@@ -361,7 +377,7 @@ impl Message {
             _ => (),
         };
 
-        self.verify_eip191(&sig)
+        self.verify_eip191(sig).await
     }
 
     /// Validates the time constraints of the message at current time.
@@ -530,8 +546,8 @@ Resources:
         assert_eq!(message, &Message::from_str(message).unwrap().to_string());
     }
 
-    #[test]
-    fn verification() {
+    #[tokio::test]
+    async fn verification() {
         let message = Message::from_str(
             r#"localhost:4361 wants you to sign in with your Ethereum account:
 0x6Da01670d8fc844e736095918bbE11fE8D564163
@@ -546,13 +562,13 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(&correct).is_ok());
+        assert!(message.verify_eip191(&correct).await.is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(&incorrect).is_err());
+        assert!(message.verify_eip191(&incorrect).await.is_err());
     }
 
-    #[test]
-    fn verification1() {
+    #[tokio::test]
+    async fn verification1() {
         let message = Message::from_str(r#"localhost wants you to sign in with your Ethereum account:
 0x4b60ffAf6fD681AbcC270Faf4472011A4A14724C
 
@@ -570,9 +586,9 @@ Resources:
 - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#get
 - kepler://bafk2bzacecn2cdbtzho72x4c62fcxvcqj23padh47s5jyyrv42mtca3yrhlpa#list"#).unwrap();
         let correct = <[u8; 65]>::from_hex(r#"20c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
-        assert!(message.verify_eip191(&correct).is_ok());
+        assert!(message.verify_eip191(&correct).await.is_ok());
         let incorrect = <[u8; 65]>::from_hex(r#"30c0da863b3dbfbb2acc0fb3b9ec6daefa38f3f20c997c283c4818ebeca96878787f84fccc25c4087ccb31ebd782ae1d2f74be076a49c0a8604419e41507e9381c"#).unwrap();
-        assert!(message.verify_eip191(&incorrect).is_err());
+        assert!(message.verify_eip191(&incorrect).await.is_err());
     }
 
     const PARSING_POSITIVE: &str = include_str!("../tests/siwe/test/parsing_positive.json");
@@ -581,6 +597,8 @@ Resources:
         include_str!("../tests/siwe/test/verification_positive.json");
     const VERIFICATION_NEGATIVE: &str =
         include_str!("../tests/siwe/test/verification_negative.json");
+    #[cfg(feature = "ethers")]
+    const VERIFICATION_EIP1271: &str = include_str!("../tests/siwe/test/eip1271.json");
 
     fn fields_to_message(fields: &serde_json::Value) -> anyhow::Result<Message> {
         let fields = fields.as_object().unwrap();
@@ -656,8 +674,8 @@ Resources:
         }
     }
 
-    #[test]
-    fn verification_positive() {
+    #[tokio::test]
+    async fn verification_positive() {
         let tests: serde_json::Value = serde_json::from_str(VERIFICATION_POSITIVE).unwrap();
         for (test_name, test) in tests.as_object().unwrap() {
             print!("{} -> ", test_name);
@@ -675,47 +693,69 @@ Resources:
                 .as_object()
                 .unwrap()
                 .get("time")
-                .map_or(None, |timestamp| {
+                .and_then(|timestamp| {
                     OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).ok()
                 });
             assert!(message
-                .verify(signature, None, None, timestamp.as_ref())
+                .verify(&signature, None, None, timestamp.as_ref())
+                .await
                 .is_ok());
             println!("✅")
         }
     }
 
-    #[test]
-    fn verification_negative() {
+    #[cfg(feature = "ethers")]
+    #[tokio::test]
+    async fn verification_eip1271() {
+        let tests: serde_json::Value = serde_json::from_str(VERIFICATION_EIP1271).unwrap();
+        for (test_name, test) in tests.as_object().unwrap() {
+            print!("{} -> ", test_name);
+            let message = Message::from_str(test["message"].as_str().unwrap()).unwrap();
+            let signature = <Vec<u8>>::from_hex(
+                test["signature"]
+                    .as_str()
+                    .unwrap()
+                    .strip_prefix("0x")
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(message.verify(&signature, None, None, None).await.is_ok());
+            println!("✅")
+        }
+    }
+
+    #[tokio::test]
+    async fn verification_negative() {
         let tests: serde_json::Value = serde_json::from_str(VERIFICATION_NEGATIVE).unwrap();
         for (test_name, test) in tests.as_object().unwrap() {
             print!("{} -> ", test_name);
             let fields = &test;
             let message = fields_to_message(fields);
-            let signature = <[u8; 65]>::from_hex(
+            let signature = <Vec<u8>>::from_hex(
                 fields.as_object().unwrap()["signature"]
                     .as_str()
                     .unwrap()
                     .strip_prefix("0x")
                     .unwrap(),
             );
-            let domain_binding = fields
-                .as_object()
-                .unwrap()
-                .get("domainBinding")
-                .map_or(None, |domain_binding| {
-                    Authority::from_str(domain_binding.as_str().unwrap()).ok()
-                });
+            let domain_binding =
+                fields
+                    .as_object()
+                    .unwrap()
+                    .get("domainBinding")
+                    .and_then(|domain_binding| {
+                        Authority::from_str(domain_binding.as_str().unwrap()).ok()
+                    });
             let match_nonce = fields
                 .as_object()
                 .unwrap()
                 .get("matchNonce")
-                .map_or(None, |match_nonce| match_nonce.as_str());
+                .and_then(|match_nonce| match_nonce.as_str());
             let timestamp = fields
                 .as_object()
                 .unwrap()
                 .get("time")
-                .map_or(None, |timestamp| {
+                .and_then(|timestamp| {
                     OffsetDateTime::parse(timestamp.as_str().unwrap(), &Rfc3339).ok()
                 });
             assert!(
@@ -724,18 +764,19 @@ Resources:
                     || message
                         .unwrap()
                         .verify(
-                            signature.unwrap(),
+                            &signature.unwrap(),
                             domain_binding.as_ref(),
                             match_nonce,
                             timestamp.as_ref(),
                         )
+                        .await
                         .is_err()
             );
             println!("✅")
         }
     }
 
-    const VALID_CASES: &'static [&'static str] = &[
+    const VALID_CASES: &[&str] = &[
         // From the spec:
         // All caps
         "0x52908400098527886E0F7030069857D2E4169EE7",
@@ -749,7 +790,7 @@ Resources:
         "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
     ];
 
-    const INVALID_CASES: &'static [&'static str] = &[
+    const INVALID_CASES: &[&str] = &[
         // From eip55 Crate:
         "0xD1220a0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
         "0xdbF03B407c01e7cD3CBea99509d93f8DDDC8C6FB",
@@ -765,12 +806,12 @@ Resources:
     fn test_is_checksum() {
         for case in VALID_CASES {
             let c = case.trim_start_matches("0x");
-            assert_eq!(is_checksum(&c), true)
+            assert!(is_checksum(c))
         }
 
         for case in INVALID_CASES {
             let c = case.trim_start_matches("0x");
-            assert_eq!(is_checksum(&c), false)
+            assert!(!is_checksum(c))
         }
     }
 
