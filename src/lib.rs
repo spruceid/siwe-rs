@@ -287,8 +287,11 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
-#[cfg_attr(feature = "typed-builder", derive(typed_builder::TypedBuilder))]
-#[cfg_attr(feature = "typed-builder", builder(doc))]
+#[cfg_attr(
+    feature = "typed-builder",
+    derive(typed_builder::TypedBuilder),
+    builder(doc)
+)]
 #[derive(Default)]
 /// Verification options and configuration
 pub struct VerificationOpts {
