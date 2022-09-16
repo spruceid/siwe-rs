@@ -295,14 +295,14 @@ impl<'de> Deserialize<'de> for Message {
 #[derive(Default)]
 /// Verification options and configuration
 pub struct VerificationOpts {
-    /// RFC 4501 dns authority that is requesting the signing (Optional)
+    /// Expected domain field.
     pub domain: Option<Authority>,
-    /// Randomized token used to prevent replay attacks, at least 8 alphanumeric characters (Optional)
+    /// Expected nonce field.
     pub nonce: Option<String>,
-    /// ISO 8601 datetime string of the current time (Optional)
+    /// Datetime for which the message should be valid at.
     pub timestamp: Option<OffsetDateTime>,
     #[cfg(feature = "ethers")]
-    /// RPC Provider use for on-chain checks. Necessary for contract wallets signatures.
+    /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
     pub rpc_provider: Option<Provider<Http>>,
 }
 
