@@ -1,3 +1,7 @@
+#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![doc = include_str!("../README.md")]
+
 use core::{
     convert::Infallible,
     fmt::{self, Display, Formatter},
@@ -19,13 +23,15 @@ use time::OffsetDateTime;
 
 #[cfg(feature = "ethers")]
 mod eip1271;
-pub mod nonce;
-pub mod rfc3339;
-
+mod nonce;
+mod rfc3339;
+pub use nonce::generate_nonce;
 pub use rfc3339::TimeStamp;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// EIP-4361 version.
 pub enum Version {
+    /// V1
     V1 = 1,
 }
 
@@ -40,19 +46,32 @@ impl FromStr for Version {
     }
 }
 
+/// EIP-4361 message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
+    /// The RFC 3986 authority that is requesting the signing.
     pub domain: Authority,
+    /// The Ethereum address performing the signing conformant to capitalization encoded checksum specified in EIP-55 where applicable.
     pub address: [u8; 20],
+    /// A human-readable ASCII assertion that the user will sign, and it must not contain '\n' (the byte 0x0a).
     pub statement: Option<String>,
+    /// An RFC 3986 URI referring to the resource that is the subject of the signing (as in the subject of a claim).
     pub uri: UriString,
+    /// The current version of the message, which MUST be 1 for this specification.
     pub version: Version,
+    /// The EIP-155 Chain ID to which the session is bound, and the network where Contract Accounts MUST be resolved.
     pub chain_id: u64,
+    /// A randomized token typically chosen by the relying party and used to prevent replay attacks, at least 8 alphanumeric characters.
     pub nonce: String,
+    /// The ISO 8601 datetime string of the current time.
     pub issued_at: TimeStamp,
+    /// The ISO 8601 datetime string that, if present, indicates when the signed authentication message is no longer valid.
     pub expiration_time: Option<TimeStamp>,
+    /// The ISO 8601 datetime string that, if present, indicates when the signed authentication message will become valid.
     pub not_before: Option<TimeStamp>,
+    /// An system-specific identifier that may be used to uniquely refer to the sign-in request.
     pub request_id: Option<String>,
+    /// A list of information or references to information the user wishes to have resolved as part of authentication by the relying party. They are expressed as RFC 3986 URIs separated by "\n- " where \n is the byte 0x0a.
     pub resources: Vec<UriString>,
 }
 
@@ -90,24 +109,28 @@ impl Display for Message {
 }
 
 #[derive(Error, Debug)]
+/// Errors raised during parsing/deserialization.
 pub enum ParseError {
     #[error("Invalid Domain: {0}")]
+    /// Domain field is non-conformant.
     Domain(#[from] InvalidUri),
     #[error("Formatting Error: {0}")]
+    /// Catch-all for all other parsing errors.
     Format(&'static str),
     #[error("Invalid Address: {0}")]
+    /// Address field is non-conformant.
     Address(#[from] hex::FromHexError),
-    #[error("Invalid Statement: {0}")]
-    Statement(&'static str),
     #[error("Invalid URI: {0}")]
+    /// URI field is non-conformant.
     Uri(#[from] iri_string::validate::Error),
     #[error("Invalid Timestamp: {0}")]
+    /// Timestamp is non-conformant.
     TimeStamp(#[from] time::Error),
-    #[error("Invalid Nonce: {0}")]
-    Nonce(&'static str),
     #[error(transparent)]
+    /// Chain ID is non-conformant.
     ParseIntError(#[from] std::num::ParseIntError),
     #[error(transparent)]
+    /// Infallible variant.
     Never(#[from] Infallible),
 }
 
@@ -265,6 +288,7 @@ impl<'de> Deserialize<'de> for Message {
 }
 
 #[cfg_attr(feature = "typed-builder", derive(typed_builder::TypedBuilder))]
+#[cfg_attr(feature = "typed-builder", builder(doc))]
 #[derive(Default)]
 /// Verification options and configuration
 pub struct VerificationOpts {
@@ -280,27 +304,37 @@ pub struct VerificationOpts {
 }
 
 #[derive(Error, Debug)]
+/// Reasons for the verification of a signed message to fail.
 pub enum VerificationError {
     #[error(transparent)]
+    /// Signature is not a valid k256 signature (it can be returned if the contract wallet verification failed or is not enabled).
     Crypto(#[from] k256::ecdsa::Error),
     #[error(transparent)]
+    /// Message failed to be serialized.
     Serialization(#[from] fmt::Error),
-    #[error("Recovered key does not match address")]
+    #[error("Recovered key does not match address or contract wallet support is not enabled.")]
+    /// Catch-all for invalid signature (it can be returned if contract wallet support is not enabled).
     Signer,
     #[error("Message is not currently valid")]
+    /// Message is not currently valid.
     Time,
     #[error("Message domain does not match")]
+    /// Expected message domain does not match.
     DomainMismatch,
     #[error("Message nonce does not match")]
+    /// Expected message nonce does not match.
     NonceMismatch,
     #[cfg(feature = "ethers")]
-    #[error("{0}")]
+    // Using a String because the original type requires a lifetime.
+    #[error("Contract wallet query failed: {0}")]
+    /// Contract wallet verification failed unexpectedly.
     ContractCall(String),
     #[error("The signature is not 65 bytes long. It might mean that it is a EIP1271 signature and you have the `ethers` feature disabled or configured a provider.")]
+    /// The signature is not 65 bytes long. It might mean that it is a EIP1271 signature and you have the `ethers` feature disabled or configured a provider.
     SignatureLength,
 }
 
-/// is_checksum takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
+/// Takes an UNPREFIXED eth address and returns whether it is in checksum format or not.
 pub fn is_checksum(address: &str) -> bool {
     match <[u8; 20]>::from_hex(address) {
         Ok(s) => {
@@ -481,7 +515,7 @@ impl Message {
     }
 }
 
-/// eip55 takes an eth address and returns it as a checksum formatted string.
+/// Takes an eth address and returns it as a checksum formatted string.
 pub fn eip55(addr: &[u8; 20]) -> String {
     use sha3::{Digest, Keccak256};
     let addr_str = hex::encode(addr);
