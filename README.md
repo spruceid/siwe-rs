@@ -10,6 +10,11 @@ SIWE can be easily installed in any Rust project by including it in said project
 siwe = "0.4"
 ```
 
+Features available:
+- `serde` for serialisation/deserialisation support;
+- `ethers` for EIP-1271 compliant contract wallets support; and
+- `typed-builder` for nicer verification options construction.
+
 ## Usage
 
 SIWE exposes a `Message` struct which implements EIP-4361.
