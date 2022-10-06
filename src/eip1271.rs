@@ -20,9 +20,9 @@ pub async fn verify_eip1271(
     let abi = Abi {
         constructor: None,
         functions: BTreeMap::from([(
-            "isValidSignature".to_string(),
+            METHOD_NAME.to_string(),
             vec![Function {
-                name: "isValidSignature".to_string(),
+                name: METHOD_NAME.to_string(),
                 inputs: vec![
                     Param {
                         name: " _message".to_string(),
