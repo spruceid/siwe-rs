@@ -10,6 +10,11 @@ SIWE can be easily installed in any Rust project by including it in said project
 siwe = "0.4"
 ```
 
+Features available:
+- `serde` for serialisation/deserialisation support;
+- `ethers` for EIP-1271 compliant contract wallets support; and
+- `typed-builder` for nicer verification options construction.
+
 ## Usage
 
 SIWE exposes a `Message` struct which implements EIP-4361.
@@ -18,7 +23,7 @@ SIWE exposes a `Message` struct which implements EIP-4361.
 
 Parsing is done via the `Message` implementation of `FromStr`:
 
-``` rust
+``` rust,ignore
 let message: Message = string_message.parse()?;
 ```
 
@@ -26,13 +31,13 @@ let message: Message = string_message.parse()?;
 
 Verification and Authentication is performed via EIP-191, using the `address` field of the `Message` as the expected signer. This returns the Ethereum public key of the signer:
 
-``` rust
+``` rust,ignore
 let signer: Vec<u8> = message.verify_eip191(&signature)?;
 ```
 
 The time constraints (expiry and not-before) can also be validated, at current or particular times:
 
-``` rust
+``` rust,ignore
 if message.valid_now() { ... };
 
 // equivalent to
@@ -41,27 +46,27 @@ if message.valid_at(&OffsetDateTime::now_utc()) { ... };
 
 Combined verification of time constraints and authentication can be done in a single call with `verify`:
 
-``` rust
-let signer: Vec<u8> = message.verify(&signature)?;
+``` rust,ignore
+message.verify(&signature).await?;
 ```
 
 ### Serialization of a SIWE Message
 
 `Message` instances can also be serialized as their EIP-4361 string representations via the `Display` implementation of `Message`:
 
-``` rust
+``` rust,ignore
 println!("{}", &message);
 ```
 
 As well as in EIP-191 Personal-Signature pre-hash signing input form (if your Ethereum wallet does not support EIP-191 directly):
 
-``` rust
-let eip191_string: String = message.eip191_string()?;
+``` rust,ignore
+let eip191_bytes: Vec<u8> = message.eip191_bytes()?;
 ```
 
 And directly as the EIP-191 Personal-Signature Hashed signing-input (made over the `.eip191_string` output):
 
-``` rust
+``` rust,ignore
 let eip191_hash: [u8; 32] = message.eip191_hash()?;
 ```
 
@@ -69,21 +74,21 @@ let eip191_hash: [u8; 32] = message.eip191_hash()?;
 
 Parsing and verifying a `Message` is easy:
 
-``` rust
+``` rust,ignore
 let message: Message = str.parse()?;
 let signature: [u8; 65];
 
-if let Err(e) = message.verify(&signature) {
+if let Err(e) = message.verify(&signature).await {
     // message cannot be correctly authenticated at this time
 }
 
 // do application-specific things
 ```
 
-## Disclaimer 
+## Disclaimer
 
-Our Rust library for Sign-In with Ethereum has not yet undergone a formal security 
-audit. We welcome continued feedback on the usability, architecture, and security 
+Our Rust library for Sign-In with Ethereum has not yet undergone a formal security
+audit. We welcome continued feedback on the usability, architecture, and security
 of this implementation.
 
 ## See Also

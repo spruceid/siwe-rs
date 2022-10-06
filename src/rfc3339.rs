@@ -6,6 +6,7 @@ use core::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// Wrapper for [OffsetDateTime], meant to enable transitivity of deserialisation and serialisation.
 pub struct TimeStamp(String, OffsetDateTime);
 
 impl From<OffsetDateTime> for TimeStamp {

@@ -1,6 +1,6 @@
 [package]
 name = "siwe"
-version = "0.4.2"
+version = "0.5.0"
 authors = ["Spruce Systems, Inc."]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -25,7 +25,13 @@ thiserror = "1.0"
 http = "0.2.5"
 rand = "0.8.4"
 serde = { version = "1.0.140", optional = true }
+ethers = { version = "0.17.0", optional = true }
+typed-builder = { version = "0.10.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"
 anyhow = "1.0"
+tokio = { version = "1.21.1", features = ["rt", "macros"] }
+
+[package.metadata.docs.rs]
+all-features = true
