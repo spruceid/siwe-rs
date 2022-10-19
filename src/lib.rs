@@ -287,30 +287,27 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
-#[cfg(feature = "typed-builder")]
-mod tb {
-    use super::*;
+macro_rules! typed_builder_doc {
+    ($struct:item) => {
+        #[cfg(feature = "typed-builder")]
+        mod tb {
+            use super::*;
+            #[derive(typed_builder::TypedBuilder)]
+            #[builder(doc)]
+            $struct
+        }
 
-    /// Verification options and configuration
-    #[derive(Default, typed_builder::TypedBuilder)]
-    #[builder(doc)]
-    pub struct VerificationOpts {
-        /// Expected domain field.
-        pub domain: Option<Authority>,
-        /// Expected nonce field.
-        pub nonce: Option<String>,
-        /// Datetime for which the message should be valid at.
-        pub timestamp: Option<OffsetDateTime>,
-        #[cfg(feature = "ethers")]
-        /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
-        pub rpc_provider: Option<Provider<Http>>,
+        #[cfg(not(feature = "typed-builder"))]
+        mod tb {
+            use super::*;
+            $struct
+        }
+
+        pub use tb::*;
     }
 }
 
-#[cfg(not(feature = "typed-builder"))]
-mod tb {
-    use super::*;
-
+typed_builder_doc!{
     /// Verification options and configuration
     #[derive(Default)]
     pub struct VerificationOpts {
@@ -325,8 +322,6 @@ mod tb {
         pub rpc_provider: Option<Provider<Http>>,
     }
 }
-
-pub use tb::*;
 
 #[derive(Error, Debug)]
 /// Reasons for the verification of a signed message to fail.
