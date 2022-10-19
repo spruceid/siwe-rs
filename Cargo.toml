@@ -34,4 +34,5 @@ anyhow = "1.0"
 tokio = { version = "1.21.1", features = ["rt", "macros"] }
 
 [package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
 all-features = true
