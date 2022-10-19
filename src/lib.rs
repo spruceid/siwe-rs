@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg), feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
 use core::{
@@ -294,12 +294,14 @@ macro_rules! typed_builder_doc {
             use super::*;
             #[derive(typed_builder::TypedBuilder)]
             #[builder(doc)]
+            #[cfg_attr(docsrs, doc(cfg(all())))]
             $struct
         }
 
         #[cfg(not(feature = "typed-builder"))]
         mod tb {
             use super::*;
+            #[cfg_attr(docsrs, doc(cfg(all())))]
             $struct
         }
 
