@@ -287,6 +287,7 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
+// Fixes the documentation to show the typed builder impl as behind a feature flag.
 macro_rules! typed_builder_doc {
     ($struct:item) => {
         #[cfg(feature = "typed-builder")]
@@ -310,20 +311,22 @@ macro_rules! typed_builder_doc {
 }
 
 typed_builder_doc! {
-/// Verification options and configuration
-pub struct VerificationOpts {
-    /// Expected domain field.
-    pub domain: Option<Authority>,
-    /// Expected nonce field.
-    pub nonce: Option<String>,
-    /// Datetime for which the message should be valid at.
-    pub timestamp: Option<OffsetDateTime>,
-    #[cfg(feature = "ethers")]
-    /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
-    pub rpc_provider: Option<Provider<Http>>,
-}
+    /// Verification options and configuration
+    pub struct VerificationOpts {
+        /// Expected domain field.
+        pub domain: Option<Authority>,
+        /// Expected nonce field.
+        pub nonce: Option<String>,
+        /// Datetime for which the message should be valid at.
+        pub timestamp: Option<OffsetDateTime>,
+        #[cfg(feature = "ethers")]
+        /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
+        pub rpc_provider: Option<Provider<Http>>,
+    }
 }
 
+// Non-derived implementation needed, otherwise the implementation is marked as being behind the
+// typed-builder feature flag.
 #[allow(clippy::derivable_impls)]
 impl Default for VerificationOpts {
     fn default() -> Self {
