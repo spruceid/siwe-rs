@@ -309,7 +309,7 @@ macro_rules! typed_builder_doc {
     }
 }
 
-typed_builder_doc!{
+typed_builder_doc! {
     /// Verification options and configuration
     #[derive(Default)]
     pub struct VerificationOpts {
