@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg), feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
 use core::{
@@ -287,23 +287,57 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
-#[cfg_attr(
-    feature = "typed-builder",
-    derive(typed_builder::TypedBuilder),
-    builder(doc)
-)]
-#[derive(Default)]
-/// Verification options and configuration
-pub struct VerificationOpts {
-    /// Expected domain field.
-    pub domain: Option<Authority>,
-    /// Expected nonce field.
-    pub nonce: Option<String>,
-    /// Datetime for which the message should be valid at.
-    pub timestamp: Option<OffsetDateTime>,
-    #[cfg(feature = "ethers")]
-    /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
-    pub rpc_provider: Option<Provider<Http>>,
+// Fixes the documentation to show the typed builder impl as behind a feature flag.
+macro_rules! typed_builder_doc {
+    ($struct:item) => {
+        #[cfg(feature = "typed-builder")]
+        mod tb {
+            use super::*;
+            #[derive(typed_builder::TypedBuilder)]
+            #[builder(doc)]
+            #[cfg_attr(docsrs, doc(cfg(all())))]
+            $struct
+        }
+
+        #[cfg(not(feature = "typed-builder"))]
+        mod tb {
+            use super::*;
+            #[cfg_attr(docsrs, doc(cfg(all())))]
+            $struct
+        }
+
+        pub use tb::*;
+    }
+}
+
+typed_builder_doc! {
+    /// Verification options and configuration
+    pub struct VerificationOpts {
+        /// Expected domain field.
+        pub domain: Option<Authority>,
+        /// Expected nonce field.
+        pub nonce: Option<String>,
+        /// Datetime for which the message should be valid at.
+        pub timestamp: Option<OffsetDateTime>,
+        #[cfg(feature = "ethers")]
+        /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
+        pub rpc_provider: Option<Provider<Http>>,
+    }
+}
+
+// Non-derived implementation needed, otherwise the implementation is marked as being behind the
+// typed-builder feature flag.
+#[allow(clippy::derivable_impls)]
+impl Default for VerificationOpts {
+    fn default() -> Self {
+        Self {
+            domain: None,
+            nonce: None,
+            timestamp: None,
+            #[cfg(feature = "ethers")]
+            rpc_provider: None,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
