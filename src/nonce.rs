@@ -5,7 +5,7 @@ use rand::{thread_rng, Rng};
 pub fn generate_nonce() -> String {
     thread_rng()
         .sample_iter(&Alphanumeric)
-        .take(11)
+        .take(17)
         .map(char::from)
         .collect()
 }
