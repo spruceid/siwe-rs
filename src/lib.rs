@@ -720,17 +720,20 @@ Resources:
             nonce: fields["nonce"].as_str().unwrap().try_into().unwrap(),
             issued_at: <TimeStamp as std::str::FromStr>::from_str(
                 fields["issuedAt"].as_str().unwrap(),
-            )
-            .unwrap(),
+            )?,
             expiration_time: match fields.get("expirationTime") {
                 Some(e) => Some(<TimeStamp as std::str::FromStr>::from_str(
                     e.as_str().unwrap(),
                 )?),
                 None => None,
             },
-            not_before: fields
-                .get("notBefore")
-                .map(|e| <TimeStamp as std::str::FromStr>::from_str(e.as_str().unwrap()).unwrap()),
+            not_before: if let Some(not_before) = fields.get("notBefore") {
+                Some(<TimeStamp as std::str::FromStr>::from_str(
+                    not_before.as_str().unwrap(),
+                )?)
+            } else {
+                None
+            },
             request_id: fields
                 .get("requestId")
                 .map(|e| e.as_str().unwrap().to_string()),
