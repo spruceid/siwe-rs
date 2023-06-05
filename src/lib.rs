@@ -546,7 +546,7 @@ impl Message {
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
         use sha3::{Digest, Keccak256};
         Ok(Keccak256::default()
-            .chain_update(&self.eip191_bytes()?)
+            .chain_update(self.eip191_bytes()?)
             .finalize()
             .into())
     }
