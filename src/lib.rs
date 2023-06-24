@@ -13,19 +13,13 @@ use ::core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
-// use ::k256::{
-//     ecdsa::{
-//         recoverable::{Id, Signature},
-//         signature::Signature as S,
-//         Signature as Sig,
-//     },
-//     elliptic_curve::sec1::ToEncodedPoint,
-// };
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
+use k256::ecdsa::VerifyingKey;
+use k256::ecdsa::{RecoveryId, Signature};
 use sha3::{Digest, Keccak256};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use thiserror::Error;
 use time::OffsetDateTime;
 
@@ -407,22 +401,23 @@ impl Message {
     /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
     /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
-        // let recovery_id = Id::new(&sig[64] % 27)?;
+        let msg = self.eip191_bytes()?;
+        let signature: Signature = Signature::from_slice(&sig[..64])?;
+        let recovery_id = RecoveryId::try_from(&sig[64] % 27)?;
 
-        // let sig = Sig::from_bytes(&sig[..64])?;
+        let pk: VerifyingKey = VerifyingKey::recover_from_msg(&msg, &signature, recovery_id)?;
 
-        // let pk = Signature::new(&sig, recovery_id)?.recover_verifying_key(&self.eip191_bytes()?)?;
+        let recovered_address = Keccak256::default()
+            .chain_update(&pk.to_encoded_point(false).as_bytes()[1..])
+            .finalize();
 
-        // if Keccak256::default()
-        //     .chain_update(&pk.to_encoded_point(false).as_bytes()[1..])
-        //     .finalize()[12..]
-        //     != self.address
-        // {
-        //     Err(VerificationError::Signer)
-        // } else {
-        //     Ok(pk.to_bytes().into_iter().collect())
-        // }
-        todo!("rewrite this to work with the latest k256 crate");
+        let recovered_address: &[u8] = &recovered_address[12..];
+
+        if recovered_address != self.address {
+            Err(VerificationError::Signer)
+        } else {
+            Ok(pk.to_sec1_bytes().to_vec())
+        }
     }
 
     #[cfg(feature = "ethers")]
@@ -665,7 +660,11 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(&correct).is_ok());
+
+        let verify_result = message.verify_eip191(&correct);
+        dbg!(&verify_result);
+        assert!(verify_result.is_ok());
+
         let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
         assert!(message.verify_eip191(&incorrect).is_err());
     }
