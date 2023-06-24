@@ -401,11 +401,12 @@ impl Message {
     /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
     /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
-        let msg = self.eip191_bytes()?;
+        let prehash = self.eip191_hash()?;
         let signature: Signature = Signature::from_slice(&sig[..64])?;
         let recovery_id = RecoveryId::try_from(&sig[64] % 27)?;
 
-        let pk: VerifyingKey = VerifyingKey::recover_from_msg(&msg, &signature, recovery_id)?;
+        let pk: VerifyingKey =
+            VerifyingKey::recover_from_prehash(&prehash, &signature, recovery_id)?;
 
         let recovered_address = Keccak256::default()
             .chain_update(&pk.to_encoded_point(false).as_bytes()[1..])
