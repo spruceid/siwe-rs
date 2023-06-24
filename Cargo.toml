@@ -14,10 +14,9 @@ exclude = ["tests", ".github"]
 [dependencies]
 iri-string = "0.7"
 hex = "0.4"
-k256 = { version = "0.11", default-features = false, features = [
+k256 = { version = "0.13", default-features = false, features = [
     "std",
     "ecdsa",
-    "keccak256",
 ] }
 sha3 = "0.10.8"
 time = { version = "0.3", features = ["parsing", "formatting"] }

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use ethers::{
     abi::{Abi, Function, Param, ParamType, StateMutability},
@@ -14,7 +15,7 @@ pub async fn verify_eip1271(
     address: [u8; 20],
     message_hash: &[u8; 32],
     signature: &[u8],
-    provider: &Provider<Http>,
+    provider: Arc<Provider<Http>>,
 ) -> Result<bool, VerificationError> {
     #[allow(deprecated)]
     let abi = Abi {
@@ -50,7 +51,7 @@ pub async fn verify_eip1271(
         fallback: false,
     };
 
-    let contract = Contract::new(address.into(), abi, provider);
+    let contract = Contract::new(address, abi, provider);
 
     match contract
         .method::<_, [u8; 4]>(
