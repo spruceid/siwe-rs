@@ -428,9 +428,9 @@ impl Message {
     /// - `sig` - Signature of the message signed by the wallet.
     /// - `provider` - Provider used to query the chain.
     ///
-    /// # Example
+    /// # Example (find a provider at https://ethereumnodes.com/)
     /// ```ignore
-    /// let is_valid: bool = message.verify_eip1271(&signature, "https://eth.llamarpc.com".try_into().unwrap())?;
+    /// let is_valid: bool = message.verify_eip1271(&signature, "https://provider.example.com/".try_into().unwrap())?;
     /// ```
     pub async fn verify_eip1271(
         &self,
