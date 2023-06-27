@@ -484,7 +484,7 @@ impl Message {
 
         #[cfg(feature = "ethers")]
         if let Err(e) = res {
-            if let Some(ref provider) = opts.rpc_provider {
+            if let Some(provider) = &opts.rpc_provider {
                 if self.verify_eip1271(sig, provider).await? {
                     return Ok(());
                 }
@@ -826,7 +826,7 @@ Resources:
             )
             .unwrap();
             let opts = VerificationOpts {
-                rpc_provider: Some("https://eth.llamarpc.com".try_into().unwrap()),
+                rpc_provider: Some("https://cloudflare-eth.com".try_into().unwrap()),
                 ..Default::default()
             };
             assert!(message.verify(&signature, &opts).await.is_ok());
