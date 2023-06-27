@@ -24,7 +24,7 @@ use thiserror::Error;
 use time::OffsetDateTime;
 
 #[cfg(feature = "ethers")]
-use ::{ethers::prelude::*, std::sync::Arc};
+use ethers::prelude::*;
 
 #[cfg(feature = "serde")]
 use serde::{
@@ -328,7 +328,7 @@ typed_builder_doc! {
         pub timestamp: Option<OffsetDateTime>,
         #[cfg(feature = "ethers")]
         /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
-        pub rpc_provider: Option<Arc<Provider<Http>>>,
+        pub rpc_provider: Option<Provider<Http>>,
     }
 }
 
@@ -435,7 +435,7 @@ impl Message {
     pub async fn verify_eip1271(
         &self,
         sig: &[u8],
-        provider: Arc<Provider<Http>>,
+        provider: &Provider<Http>,
     ) -> Result<bool, VerificationError> {
         let hash = Keccak256::new_with_prefix(self.eip191_bytes().unwrap()).finalize();
         eip1271::verify_eip1271(self.address, hash.as_ref(), sig, provider).await
@@ -485,7 +485,7 @@ impl Message {
 
         #[cfg(feature = "ethers")]
         if let Err(e) = res {
-            if let Some(provider) = opts.rpc_provider.clone() {
+            if let Some(ref provider) = opts.rpc_provider {
                 if self.verify_eip1271(sig, provider).await? {
                     return Ok(());
                 }
@@ -827,7 +827,7 @@ Resources:
             )
             .unwrap();
             let opts = VerificationOpts {
-                rpc_provider: Some(Arc::new("https://eth.llamarpc.com".try_into().unwrap())),
+                rpc_provider: Some("https://eth.llamarpc.com".try_into().unwrap()),
                 ..Default::default()
             };
             assert!(message.verify(&signature, &opts).await.is_ok());
