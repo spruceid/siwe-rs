@@ -16,8 +16,7 @@ use ::core::{
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
-use k256::ecdsa::VerifyingKey;
-use k256::ecdsa::{RecoveryId, Signature};
+use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use sha3::{Digest, Keccak256};
 use std::convert::{TryFrom, TryInto};
 use thiserror::Error;
