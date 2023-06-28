@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use ethers::{
     abi::{Abi, Function, Param, ParamType, StateMutability},
-    contract::{AbiError, Contract},
+    contract::{AbiError, ContractInstance},
     prelude::*,
 };
 
@@ -50,7 +50,7 @@ pub async fn verify_eip1271(
         fallback: false,
     };
 
-    let contract = Contract::new(address.into(), abi, provider);
+    let contract = ContractInstance::<&Provider<Http>, Provider<Http>>::new(address, abi, provider);
 
     match contract
         .method::<_, [u8; 4]>(

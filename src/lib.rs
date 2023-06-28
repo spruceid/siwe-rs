@@ -2,29 +2,35 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg), feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
-use core::{
+mod nonce;
+mod rfc3339;
+
+#[cfg(feature = "ethers")]
+mod eip1271;
+
+use ::core::{
     convert::Infallible,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
-#[cfg(feature = "ethers")]
-use ethers::prelude::*;
 use hex::FromHex;
 use http::uri::{Authority, InvalidUri};
 use iri_string::types::UriString;
+use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+use sha3::{Digest, Keccak256};
+use std::convert::{TryFrom, TryInto};
+use thiserror::Error;
+use time::OffsetDateTime;
+
+#[cfg(feature = "ethers")]
+use ethers::prelude::*;
+
 #[cfg(feature = "serde")]
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::convert::TryInto;
-use thiserror::Error;
-use time::OffsetDateTime;
 
-#[cfg(feature = "ethers")]
-mod eip1271;
-mod nonce;
-mod rfc3339;
 pub use nonce::generate_nonce;
 pub use rfc3339::TimeStamp;
 
@@ -394,26 +400,23 @@ impl Message {
     /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
     /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
-        use k256::{
-            ecdsa::{
-                recoverable::{Id, Signature},
-                signature::Signature as S,
-                Signature as Sig,
-            },
-            elliptic_curve::sec1::ToEncodedPoint,
-        };
-        use sha3::{Digest, Keccak256};
-        let pk = Signature::new(&Sig::from_bytes(&sig[..64])?, Id::new(&sig[64] % 27)?)?
-            .recover_verifying_key(&self.eip191_bytes()?)?;
+        let prehash = self.eip191_hash()?;
+        let signature: Signature = Signature::from_slice(&sig[..64])?;
+        let recovery_id = RecoveryId::try_from(&sig[64] % 27)?;
 
-        if Keccak256::default()
+        let pk: VerifyingKey =
+            VerifyingKey::recover_from_prehash(&prehash, &signature, recovery_id)?;
+
+        let recovered_address = Keccak256::default()
             .chain_update(&pk.to_encoded_point(false).as_bytes()[1..])
-            .finalize()[12..]
-            != self.address
-        {
+            .finalize();
+
+        let recovered_address: &[u8] = &recovered_address[12..];
+
+        if recovered_address != self.address {
             Err(VerificationError::Signer)
         } else {
-            Ok(pk.to_bytes().into_iter().collect())
+            Ok(pk.to_sec1_bytes().to_vec())
         }
     }
 
@@ -424,16 +427,15 @@ impl Message {
     /// - `sig` - Signature of the message signed by the wallet.
     /// - `provider` - Provider used to query the chain.
     ///
-    /// # Example
+    /// # Example (find a provider at https://ethereumnodes.com/)
     /// ```ignore
-    /// let is_valid: bool = message.verify_eip1271(&signature, "https://cloudflare-eth.com".try_into().unwrap())?;
+    /// let is_valid: bool = message.verify_eip1271(&signature, "https://provider.example.com/".try_into().unwrap())?;
     /// ```
     pub async fn verify_eip1271(
         &self,
         sig: &[u8],
         provider: &Provider<Http>,
     ) -> Result<bool, VerificationError> {
-        use sha3::{Digest, Keccak256};
         let hash = Keccak256::new_with_prefix(self.eip191_bytes().unwrap()).finalize();
         eip1271::verify_eip1271(self.address, hash.as_ref(), sig, provider).await
     }
@@ -544,7 +546,6 @@ impl Message {
     /// let eip191_hash: [u8; 32] = message.eip191_hash()?;
     /// ```
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
-        use sha3::{Digest, Keccak256};
         Ok(Keccak256::default()
             .chain_update(self.eip191_bytes()?)
             .finalize()
@@ -554,7 +555,6 @@ impl Message {
 
 /// Takes an eth address and returns it as a checksum formatted string.
 pub fn eip55(addr: &[u8; 20]) -> String {
-    use sha3::{Digest, Keccak256};
     let addr_str = hex::encode(addr);
     let hash = Keccak256::digest(addr_str.as_bytes());
     "0x".chars()
@@ -660,7 +660,11 @@ Issued At: 2021-12-07T18:28:18.807Z"#,
         )
         .unwrap();
         let correct = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
-        assert!(message.verify_eip191(&correct).is_ok());
+
+        let verify_result = message.verify_eip191(&correct);
+        dbg!(&verify_result);
+        assert!(verify_result.is_ok());
+
         let incorrect = <[u8; 65]>::from_hex(r#"7228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
         assert!(message.verify_eip191(&incorrect).is_err());
     }

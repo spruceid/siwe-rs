@@ -12,26 +12,25 @@ exclude = ["tests", ".github"]
 
 
 [dependencies]
-iri-string = "0.6"
+iri-string = "0.7"
 hex = "0.4"
-k256 = { version = "0.11", default-features = false, features = [
+k256 = { version = "0.13", default-features = false, features = [
     "std",
     "ecdsa",
-    "keccak256",
 ] }
-sha3 = "0.10.2"
+sha3 = "0.10.8"
 time = { version = "0.3", features = ["parsing", "formatting"] }
 thiserror = "1.0"
-http = "0.2.5"
-rand = "0.8.4"
-serde = { version = "1.0.140", optional = true }
-ethers = { version = "0.17.0", optional = true }
-typed-builder = { version = "0.10.0", optional = true }
+http = "0.2.9"
+rand = "0.8.5"
+serde = { version = "1.0.164", optional = true }
+ethers = { version = "2.0.7", optional = true }
+typed-builder = { version = "0.14.0", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"
 anyhow = "1.0"
-tokio = { version = "1.21.1", features = ["rt", "macros"] }
+tokio = { version = "1.28.2", features = ["rt", "macros"] }
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--cfg", "docsrs"]
