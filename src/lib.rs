@@ -826,7 +826,7 @@ Resources:
             )
             .unwrap();
             let opts = VerificationOpts {
-                rpc_provider: Some("https://cloudflare-eth.com".try_into().unwrap()),
+                rpc_provider: Some("https://eth.llamarpc.com".try_into().unwrap()),
                 ..Default::default()
             };
             assert!(message.verify(&signature, &opts).await.is_ok());
