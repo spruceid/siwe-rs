@@ -316,6 +316,7 @@ macro_rules! typed_builder_doc {
     }
 }
 
+#[cfg(not(feature = "ethers"))]
 typed_builder_doc! {
     /// Verification options and configuration
     pub struct VerificationOpts {
@@ -325,14 +326,27 @@ typed_builder_doc! {
         pub nonce: Option<String>,
         /// Datetime for which the message should be valid at.
         pub timestamp: Option<OffsetDateTime>,
-        #[cfg(feature = "ethers")]
+    }
+}
+
+#[cfg(feature = "ethers")]
+typed_builder_doc! {
+    /// Verification options and configuration
+    pub struct VerificationOpts<P = Provider<Http>> {
+        /// Expected domain field.
+        pub domain: Option<Authority>,
+        /// Expected nonce field.
+        pub nonce: Option<String>,
+        /// Datetime for which the message should be valid at.
+        pub timestamp: Option<OffsetDateTime>,
         /// RPC Provider used for on-chain checks. Necessary for contract wallets signatures.
-        pub rpc_provider: Option<Provider<Http>>,
+        pub rpc_provider: Option<P>,
     }
 }
 
 // Non-derived implementation needed, otherwise the implementation is marked as being behind the
 // typed-builder feature flag.
+#[cfg(not(feature = "ethers"))]
 #[allow(clippy::derivable_impls)]
 impl Default for VerificationOpts {
     fn default() -> Self {
@@ -340,7 +354,20 @@ impl Default for VerificationOpts {
             domain: None,
             nonce: None,
             timestamp: None,
-            #[cfg(feature = "ethers")]
+        }
+    }
+}
+
+#[cfg(feature = "ethers")]
+// Non-derived implementation needed, otherwise the implementation is marked as being behind the
+// typed-builder feature flag.
+#[allow(clippy::derivable_impls)]
+impl<P> Default for VerificationOpts<P> {
+    fn default() -> Self {
+        Self {
+            domain: None,
+            nonce: None,
+            timestamp: None,
             rpc_provider: None,
         }
     }
@@ -431,10 +458,10 @@ impl Message {
     /// ```ignore
     /// let is_valid: bool = message.verify_eip1271(&signature, "https://provider.example.com/".try_into().unwrap())?;
     /// ```
-    pub async fn verify_eip1271(
+    pub async fn verify_eip1271<P: eip1271::SiweMiddlewareExt>(
         &self,
         sig: &[u8],
-        provider: &Provider<Http>,
+        provider: P,
     ) -> Result<bool, VerificationError> {
         let hash = Keccak256::new_with_prefix(self.eip191_bytes().unwrap()).finalize();
         eip1271::verify_eip1271(self.address, hash.as_ref(), sig, provider).await
@@ -457,6 +484,7 @@ impl Message {
     ///
     /// // do application-specific things
     /// ```
+    #[cfg(not(feature = "ethers"))]
     pub async fn verify(
         &self,
         sig: &[u8],
@@ -482,7 +510,52 @@ impl Message {
             Err(VerificationError::SignatureLength)
         };
 
-        #[cfg(feature = "ethers")]
+        res.map(|_| ())
+    }
+
+    /// Validates time constraints and integrity of the object by matching it's signature.
+    ///
+    /// # Arguments
+    /// - `sig` - Signature of the message signed by the wallet
+    /// - `opts` - Verification options and configuration
+    ///
+    /// # Example
+    /// ```ignore
+    /// let message: Message = str.parse()?;
+    /// let signature: [u8; 65];
+    ///
+    /// if let Err(e) = message.verify(&signature).await {
+    ///     // message cannot be correctly authenticated at this time
+    /// }
+    ///
+    /// // do application-specific things
+    /// ```
+    #[cfg(feature = "ethers")]
+    pub async fn verify<P: eip1271::SiweMiddlewareExt>(
+        &self,
+        sig: &[u8],
+        opts: &VerificationOpts<P>,
+    ) -> Result<(), VerificationError> {
+        match (
+            opts.timestamp
+                .as_ref()
+                .map(|t| self.valid_at(t))
+                .unwrap_or_else(|| self.valid_now()),
+            opts.domain.as_ref(),
+            opts.nonce.as_ref(),
+        ) {
+            (false, _, _) => return Err(VerificationError::Time),
+            (_, Some(d), _) if *d != self.domain => return Err(VerificationError::DomainMismatch),
+            (_, _, Some(n)) if *n != self.nonce => return Err(VerificationError::NonceMismatch),
+            _ => (),
+        };
+
+        let res = if sig.len() == 65 {
+            self.verify_eip191(sig.try_into().unwrap())
+        } else {
+            Err(VerificationError::SignatureLength)
+        };
+
         if let Err(e) = res {
             if let Some(provider) = &opts.rpc_provider {
                 if self.verify_eip1271(sig, provider).await? {
