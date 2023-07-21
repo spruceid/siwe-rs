@@ -53,6 +53,23 @@ impl FromStr for Version {
 }
 
 /// EIP-4361 message.
+///
+/// # Example
+/// ```
+/// # use siwe::Message;
+/// #
+/// let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+/// 0x6Da01670d8fc844e736095918bbE11fE8D564163
+///
+/// SIWE Notepad Example
+///
+/// URI: http://localhost:4361
+/// Version: 1
+/// Chain ID: 1
+/// Nonce: kEWepMt9knR6lWJ6A
+/// Issued At: 2021-12-07T18:28:18.807Z"#;
+/// let message: Message = msg.parse().unwrap();
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     /// The RFC 3986 authority that is requesting the signing.
@@ -396,8 +413,23 @@ impl Message {
     /// - `sig` - Signature of the message signed by the wallet
     ///
     /// # Example
-    /// ```ignore
-    /// let signer: Vec<u8> = message.verify_eip191(&signature)?;
+    /// ```
+    /// # use siwe::Message;
+    /// # use hex::FromHex;
+    /// #
+    /// # let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+    /// # 0x6Da01670d8fc844e736095918bbE11fE8D564163
+    /// #
+    /// # SIWE Notepad Example
+    /// #
+    /// # URI: http://localhost:4361
+    /// # Version: 1
+    /// # Chain ID: 1
+    /// # Nonce: kEWepMt9knR6lWJ6A
+    /// # Issued At: 2021-12-07T18:28:18.807Z"#;
+    /// # let message: Message = msg.parse().unwrap();
+    /// let signature = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
+    /// let signer: Vec<u8> = message.verify_eip191(&signature).unwrap();
     /// ```
     pub fn verify_eip191(&self, sig: &[u8; 65]) -> Result<Vec<u8>, VerificationError> {
         let prehash = self.eip191_hash()?;
@@ -447,15 +479,35 @@ impl Message {
     /// - `opts` - Verification options and configuration
     ///
     /// # Example
-    /// ```ignore
-    /// let message: Message = str.parse()?;
-    /// let signature: [u8; 65];
+    /// ```
+    /// # use hex::FromHex;
+    /// # use siwe::{Message, TimeStamp, VerificationOpts};
+    /// # use std::str::FromStr;
+    /// # use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+    /// # 0x6Da01670d8fc844e736095918bbE11fE8D564163
+    /// #
+    /// # SIWE Notepad Example
+    /// #
+    /// # URI: http://localhost:4361
+    /// # Version: 1
+    /// # Chain ID: 1
+    /// # Nonce: kEWepMt9knR6lWJ6A
+    /// # Issued At: 2021-12-07T18:28:18.807Z"#;
+    /// # let message: Message = msg.parse().unwrap();
+    /// let signature = <[u8; 65]>::from_hex(r#"6228b3ecd7bf2df018183aeab6b6f1db1e9f4e3cbe24560404112e25363540eb679934908143224d746bbb5e1aa65ab435684081f4dbb74a0fec57f98f40f5051c"#).unwrap();
     ///
-    /// if let Err(e) = message.verify(&signature).await {
-    ///     // message cannot be correctly authenticated at this time
-    /// }
+    /// let verification_opts = VerificationOpts {
+    ///     domain: Some("localhost:4361".parse().unwrap()),
+    ///     nonce: Some("kEWepMt9knR6lWJ6A".into()),
+    ///     timestamp: Some(OffsetDateTime::parse("2021-12-08T00:00:00Z", &Rfc3339).unwrap()),
+    /// };
     ///
-    /// // do application-specific things
+    /// message.verify(&signature, &verification_opts).await.unwrap();
+    /// # }
     /// ```
     pub async fn verify(
         &self,
@@ -497,11 +549,25 @@ impl Message {
     /// Validates the time constraints of the message at current time.
     ///
     /// # Example
-    /// ```ignore
-    /// if message.valid_now() { ... };
+    /// ```
+    /// # use siwe::Message;
+    /// # use time::OffsetDateTime;
+    /// #
+    /// # let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+    /// # 0x6Da01670d8fc844e736095918bbE11fE8D564163
+    /// #
+    /// # SIWE Notepad Example
+    /// #
+    /// # URI: http://localhost:4361
+    /// # Version: 1
+    /// # Chain ID: 1
+    /// # Nonce: kEWepMt9knR6lWJ6A
+    /// # Issued At: 2021-12-07T18:28:18.807Z"#;
+    /// # let message: Message = msg.parse().unwrap();
+    /// assert!(message.valid_now());
     ///
     /// // equivalent to
-    /// if message.valid_at(&OffsetDateTime::now_utc()) { ... };
+    /// assert!(message.valid_at(&OffsetDateTime::now_utc()));
     /// ```
     pub fn valid_now(&self) -> bool {
         self.valid_at(&OffsetDateTime::now_utc())
@@ -513,11 +579,22 @@ impl Message {
     /// - `t` - timestamp to use when validating time constraints
     ///
     /// # Example
-    /// ```ignore
-    /// if message.valid_now() { ... };
-    ///
-    /// // equivalent to
-    /// if message.valid_at(&OffsetDateTime::now_utc()) { ... };
+    /// ```
+    /// # use siwe::Message;
+    /// # use time::OffsetDateTime;
+    /// #
+    /// # let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+    /// # 0x6Da01670d8fc844e736095918bbE11fE8D564163
+    /// #
+    /// # SIWE Notepad Example
+    /// #
+    /// # URI: http://localhost:4361
+    /// # Version: 1
+    /// # Chain ID: 1
+    /// # Nonce: kEWepMt9knR6lWJ6A
+    /// # Issued At: 2021-12-07T18:28:18.807Z"#;
+    /// # let message: Message = msg.parse().unwrap();
+    /// assert!(message.valid_at(&OffsetDateTime::now_utc()));
     /// ```
     pub fn valid_at(&self, t: &OffsetDateTime) -> bool {
         self.not_before.as_ref().map(|nbf| nbf < t).unwrap_or(true)
@@ -531,8 +608,21 @@ impl Message {
     /// Produces EIP-191 Personal-Signature pre-hash signing input
     ///
     /// # Example
-    /// ```ignore
-    /// let eip191_bytes: Vec<u8> = message.eip191_bytes()?;
+    /// ```
+    /// # use siwe::Message;
+    /// #
+    /// # let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+    /// # 0x6Da01670d8fc844e736095918bbE11fE8D564163
+    /// #
+    /// # SIWE Notepad Example
+    /// #
+    /// # URI: http://localhost:4361
+    /// # Version: 1
+    /// # Chain ID: 1
+    /// # Nonce: kEWepMt9knR6lWJ6A
+    /// # Issued At: 2021-12-07T18:28:18.807Z"#;
+    /// # let message: Message = msg.parse().unwrap();
+    /// let eip191_bytes: Vec<u8> = message.eip191_bytes().unwrap();
     /// ```
     pub fn eip191_bytes(&self) -> Result<Vec<u8>, fmt::Error> {
         let s = self.to_string();
@@ -542,8 +632,21 @@ impl Message {
     /// Produces EIP-191 Personal-Signature Hashed signing-input
     ///
     /// # Example
-    /// ```ignore
-    /// let eip191_hash: [u8; 32] = message.eip191_hash()?;
+    /// ```
+    /// # use siwe::Message;
+    /// #
+    /// # let msg = r#"localhost:4361 wants you to sign in with your Ethereum account:
+    /// # 0x6Da01670d8fc844e736095918bbE11fE8D564163
+    /// #
+    /// # SIWE Notepad Example
+    /// #
+    /// # URI: http://localhost:4361
+    /// # Version: 1
+    /// # Chain ID: 1
+    /// # Nonce: kEWepMt9knR6lWJ6A
+    /// # Issued At: 2021-12-07T18:28:18.807Z"#;
+    /// # let message: Message = msg.parse().unwrap();
+    /// let eip191_hash: [u8; 32] = message.eip191_hash().unwrap();
     /// ```
     pub fn eip191_hash(&self) -> Result<[u8; 32], fmt::Error> {
         Ok(Keccak256::default()
