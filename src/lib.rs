@@ -504,6 +504,7 @@ impl Message {
     ///     domain: Some("localhost:4361".parse().unwrap()),
     ///     nonce: Some("kEWepMt9knR6lWJ6A".into()),
     ///     timestamp: Some(OffsetDateTime::parse("2021-12-08T00:00:00Z", &Rfc3339).unwrap()),
+    ///     ..Default::default()
     /// };
     ///
     /// message.verify(&signature, &verification_opts).await.unwrap();
